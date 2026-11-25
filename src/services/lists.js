@@ -232,6 +232,7 @@ function loadList(db, id) {
     },
     events,
     prints,
+    count: db.get('SELECT id, number, status FROM stock_counts WHERE list_id = ? ORDER BY id DESC LIMIT 1', id) || null,
   };
 }
 

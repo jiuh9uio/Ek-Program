@@ -2,6 +2,7 @@
 import { get, post, put, del } from '../api.js';
 import { esc, fmtQty, fmtEur, fmtDateTime, unitFor, parseNum, listBadge, LIST_STATUS, toast, modal, confirmDialog, debounce, matches, options, emptyState, download } from '../ui.js';
 import { navigate } from '../app.js';
+import { newListWizard } from './newlist.js';
 
 export async function render(el, ctx) {
   if (ctx.params[0]) return renderDetail(el, ctx, Number(ctx.params[0]));
@@ -18,7 +19,7 @@ async function renderOverview(el, { can, setActions }) {
   let filter = sessionStorage.getItem('ek.lists.filter') || 'open';
   let q = '';
   const actions = setActions(can('list.create') ? '<button class="btn btn-primary" id="new-list">+ Neue Einkaufsliste</button>' : '');
-  actions.querySelector('#new-list')?.addEventListener('click', () => newListDialog());
+  actions.querySelector('#new-list')?.addEventListener('click', () => newListWizard());
 
   el.innerHTML = `
     <div class="toolbar">
@@ -48,24 +49,6 @@ async function renderOverview(el, { can, setActions }) {
   }));
   el.querySelector('#q').addEventListener('input', debounce((e) => { q = e.target.value.trim(); load(); }, 250));
   await load();
-}
-
-function newListDialog() {
-  modal({
-    title: 'Neue Einkaufsliste',
-    body: `<form class="form-grid" id="nl">
-      <label class="field"><span>Bezeichnung (optional)</span><input name="title" placeholder="z. B. Wochenbestellung Getränke"></label>
-      <label class="field"><span>Hinweis (optional)</span><textarea name="note" rows="2"></textarea></label>
-      <label class="check"><input type="checkbox" name="rec" checked> Aktuelle Bestellempfehlungen (MIN/MAX) übernehmen</label></form>`,
-    actions: [{ label: 'Abbrechen' }, {
-      label: 'Anlegen', cls: 'btn-primary', onClick: async (m) => {
-        const f = m.body.querySelector('#nl');
-        const l = await post('/api/lists', { title: f.title.value, note: f.note.value, with_recommendations: f.rec.checked });
-        toast(`Liste ${l.number} angelegt (${l.items.length} Positionen).`, 'success');
-        navigate(`/lists/${l.id}`);
-      },
-    }],
-  });
 }
 
 // ======================= Detail =======================
@@ -182,7 +165,7 @@ async function renderDetail(el, { can, setTitle, setActions }, id) {
       <a href="#/lists" class="back">← Alle Einkaufslisten</a>
       <div class="list-head card">
         <div class="list-head-main">
-          <div class="list-head-title">${listBadge(list.status)} <span class="muted">erstellt ${fmtDateTime(list.created_at)} von ${esc(list.created_by_name || '–')}${list.ordered_at ? ` · bestellt ${fmtDateTime(list.ordered_at)}${list.approved_by_name ? ' (' + esc(list.approved_by_name) + ')' : ''}` : ''}${list.closed_at ? ` · abgeschlossen ${fmtDateTime(list.closed_at)}` : ''}</span></div>
+          <div class="list-head-title">${listBadge(list.status)} ${list.count ? `<a class="pill" href="#/count/${list.count.id}">📋 Zählung ${esc(list.count.number)}${list.count.status === 'open' ? ' – weiterzählen' : ''}</a>` : ''} <span class="muted">erstellt ${fmtDateTime(list.created_at)} von ${esc(list.created_by_name || '–')}${list.ordered_at ? ` · bestellt ${fmtDateTime(list.ordered_at)}${list.approved_by_name ? ' (' + esc(list.approved_by_name) + ')' : ''}` : ''}${list.closed_at ? ` · abgeschlossen ${fmtDateTime(list.closed_at)}` : ''}</span></div>
           <form id="head-form" class="head-form">
             <label class="field"><span>Bezeichnung</span><input name="title" value="${esc(list.title || '')}" ${ed ? '' : 'disabled'}></label>
             <label class="field"><span>Hinweis</span><input name="note" value="${esc(list.note || '')}" ${ed ? '' : 'disabled'}></label>

@@ -39,6 +39,23 @@ Ist der Ordner neben der EXE nicht beschreibbar, wird stattdessen `%LOCALAPPDATA
 
 ---
 
+## So läuft ein Einkauf (geführte Bestandszählung)
+
+Der Ablauf funktioniert wie in Inventursystemen großer Firmen:
+
+1. **„+ Neue Einkaufsliste“** antippen (Dashboard, Einkaufslisten oder Bestandszählungen) und **„Mit Bestandszählung“** wählen. Optional lassen sich Lagerorte und Kategorien eingrenzen.
+2. Das System legt einen **Zählbeleg** (z. B. `INV-00001`) und eine leere **Einkaufsliste** (z. B. `EK-00002`) an.
+3. Es führt dich in Laufwegreihenfolge Artikel für Artikel durchs Lager: *„Coca-Cola 0,2 l – Wie viele Kästen sind noch da?“*
+4. Du tippst die Menge über den großen Ziffernblock ein, z. B. **2**. Das System zeigt sofort: **„🛒 Nachkaufen: 8 Kästen (auffüllen bis MAX 10)“**.
+5. **„Speichern & weiter“** bucht den Bestand und setzt die 8 Kästen **automatisch auf die Einkaufsliste**. Danach kommt der nächste Artikel.
+   - Die Menge lässt sich mit −/+ anpassen; eine manuelle Menge wird bei einer Nachzählung nicht überschrieben.
+   - Schnelltasten: *Nichts mehr da (0)*, *Unverändert*, *Voll (MAX)*.
+   - *Überspringen*: Der Artikel bleibt „nicht kontrolliert“ und wird **nicht** als 0 gewertet.
+   - Was bereits auf einer anderen offenen Bestellung steht, wird abgezogen. So entstehen keine Doppelbestellungen.
+6. Am Ende zeigt die Übersicht den Bestellvorschlag und die **Soll/Ist-Differenzen** zur letzten Zählung (Verbrauch/Schwund). Von dort geht es direkt zur Einkaufsliste mit Bondruck, PDF und Freigabe.
+
+Mit Tastatur geht es noch schneller: Zahl tippen und *Enter* drücken. Alle Zählbelege bleiben unter **Bestandszählungen** nachvollziehbar und lassen sich als CSV exportieren.
+
 ## Funktionen
 
 | Bereich | Umfang |
@@ -138,7 +155,7 @@ scripts/build-exe.js   EXE-Erstellung
 ```bash
 npm install
 npm start                 # http://localhost:8080
-npm test                  # 31 Tests: Berechnungen, Bestandsbuchungen, Rechte, Druck (simulierte Drucker), PDF, Sicherung
+npm test                  # 37 Tests: Berechnungen, Bestandsbuchungen, Rechte, Druck (simulierte Drucker), PDF, Sicherung
 npm run build:exe         # → dist/EK-Service.exe (Windows x64, baubar unter Windows/Linux/macOS)
 ```
 

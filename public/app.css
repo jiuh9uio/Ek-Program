@@ -320,3 +320,64 @@ tfoot td { background: var(--surface-2); }
 @media print {
   .sidebar, .topbar, .bottom-nav, #toasts { display: none !important; }
 }
+
+/* ---------- Neue Einkaufsliste (Assistent) ---------- */
+.wiz-options { display: grid; gap: 10px; margin-bottom: 16px; }
+.wiz-opt { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border: 2px solid var(--border); border-radius: 14px; cursor: pointer; }
+.wiz-opt input { width: 24px; height: 24px; min-height: 0; margin-top: 2px; flex: none; }
+.wiz-opt:has(input:checked) { border-color: var(--primary); background: #f5f9ff; }
+.wiz-opt strong { display: block; font-size: 1.05rem; }
+.wiz-opt em { font-style: normal; font-size: .75rem; background: var(--green-bg); color: var(--green); padding: 2px 8px; border-radius: 999px; margin-left: 6px; }
+.wiz-opt small { color: var(--muted); }
+.chip-checks { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-check input { position: absolute; opacity: 0; }
+.chip-check span { display: inline-block; padding: 8px 14px; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; font-weight: 600; min-height: 40px; }
+.chip-check input:checked + span { background: var(--nav); color: #fff; border-color: var(--nav); }
+.chip-check small { opacity: .7; font-weight: 400; }
+.link-btn { border: 0; background: none; color: var(--primary); font: inherit; font-size: .8rem; cursor: pointer; text-decoration: underline; }
+.count-opts { display: grid; gap: 12px; }
+
+/* ---------- Geführte Bestandszählung ---------- */
+.count-head { margin-bottom: 14px; }
+.count-progress { height: 10px; background: var(--grey-bg); border-radius: 5px; overflow: hidden; }
+.count-progress-bar { height: 100%; background: var(--green); transition: width .3s; }
+.count-stats { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.count-layout { display: grid; gap: 16px; }
+.count-layout.with-list { grid-template-columns: minmax(0, 1fr) 320px; }
+.count-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; box-shadow: var(--shadow); max-width: 1000px; margin: 0 auto; display: grid; gap: 14px; }
+.count-main { container: countcard / inline-size; }
+.count-nav .btn[data-k=next] { order: -1; flex: 1 1 100%; min-height: 64px; }
+.count-nav [data-k=back], .count-nav [data-k=skip] { flex: 1; }
+
+.count-body, .count-entry, .count-side { display: grid; gap: 14px; align-content: start; }
+@container countcard (min-width: 820px) { .count-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; } .count-side .count-nav { flex-direction: column; } .count-side .count-nav .btn { width: 100%; flex: none; } .count-side .count-nav [data-k=next] { order: -1; min-height: 72px; font-size: 1.25rem; } }
+.count-where { font-weight: 700; color: var(--nav); }
+.count-art { display: flex; gap: 14px; align-items: center; }
+.count-art img { width: 84px; height: 84px; object-fit: cover; border-radius: 12px; border: 1px solid var(--border); }
+.count-art h2 { font-size: 1.6rem; }
+.count-art p { margin: 4px 0 0; }
+.count-q { font-size: 1.15rem; text-align: center; }
+.count-input { display: flex; justify-content: center; gap: 10px; }
+.count-input button { flex: none; width: 72px; height: 72px; border-radius: 16px; border: 1px solid #c8d1dc; background: var(--surface-2); font-size: 2rem; font-weight: 700; cursor: pointer; }
+.count-input input { flex: 0 1 180px; min-width: 0; width: 180px; height: 72px; font-size: 2.2rem; font-weight: 800; text-align: center; border-width: 2px; }
+.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 360px; margin: 0 auto; width: 100%; }
+.keypad button { height: 56px; font-size: 1.5rem; font-weight: 700; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); cursor: pointer; touch-action: manipulation; }
+.keypad button:active { background: var(--grey-bg); }
+.center-row { justify-content: center; }
+.count-result { border-radius: 14px; padding: 14px; background: var(--surface-2); border: 2px dashed var(--border); display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; min-height: 64px; }
+.count-result.need { background: var(--blue-bg); border: 2px solid #93c5fd; }
+.count-result.fine { background: var(--green-bg); border: 2px solid #86efac; }
+.cr-text { font-size: 1.15rem; }
+.count-nav { display: flex; gap: 10px; flex-wrap: wrap; }
+.count-list { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; max-height: calc(100vh - 220px); overflow-y: auto; position: sticky; top: 80px; }
+.count-list ol { list-style: none; margin: 0; padding: 6px; }
+.cl-head { font-size: .78rem; text-transform: uppercase; color: var(--muted); font-weight: 700; padding: 10px 8px 4px; }
+.cl-row { display: flex; gap: 8px; align-items: center; padding: 8px; border-radius: 8px; cursor: pointer; min-height: 42px; }
+.cl-row:hover { background: var(--surface-2); }
+.cl-row.cur { background: var(--blue-bg); font-weight: 700; }
+.cl-ico { width: 20px; text-align: center; }
+.cl-counted .cl-ico { color: var(--green); } .cl-skipped { color: var(--muted); }
+.cl-val { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.text-blue { color: var(--blue); }
+@media (max-width: 1100px) { .count-layout.with-list { grid-template-columns: 1fr; } .count-list { position: static; max-height: none; } }
+@media (max-width: 560px) { .count-card { padding: 14px; } .count-art h2 { font-size: 1.3rem; } .count-input input { width: 130px; } .count-input button { width: 62px; height: 62px; } .count-nav .btn { flex: 1; } }

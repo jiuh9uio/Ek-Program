@@ -240,4 +240,34 @@ module.exports = [
   );
   CREATE INDEX idx_audit_at ON audit_log(at);
   `,
+  // ---------- Migration 2: Bestandszählungen (Inventurbelege) ----------
+  `
+  CREATE TABLE stock_counts (
+    id           INTEGER PRIMARY KEY,
+    number       TEXT NOT NULL UNIQUE,
+    department   TEXT NOT NULL DEFAULT 'service' REFERENCES departments(code),
+    list_id      INTEGER REFERENCES purchase_lists(id) ON DELETE SET NULL,
+    status       TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','completed')),
+    scope        TEXT,
+    created_by   INTEGER REFERENCES users(id),
+    created_at   TEXT NOT NULL,
+    completed_at TEXT,
+    completed_by INTEGER REFERENCES users(id)
+  );
+
+  CREATE TABLE stock_count_items (
+    id           INTEGER PRIMARY KEY,
+    count_id     INTEGER NOT NULL REFERENCES stock_counts(id) ON DELETE CASCADE,
+    article_id   INTEGER NOT NULL REFERENCES articles(id),
+    seq          INTEGER NOT NULL,
+    expected_qty REAL,                      -- letzter bekannter Bestand (Soll) beim Start
+    counted_qty  REAL,                      -- NULL = (noch) nicht gezählt
+    counted_at   TEXT,
+    counted_by   INTEGER REFERENCES users(id),
+    skipped      INTEGER NOT NULL DEFAULT 0,
+    order_qty    REAL,
+    UNIQUE (count_id, article_id)
+  );
+  CREATE INDEX idx_count_items ON stock_count_items(count_id, seq);
+  `,
 ];

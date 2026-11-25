@@ -12,6 +12,7 @@ function createApp(config, log = console) {
   require('./routes/articles')(router);
   require('./routes/mode')(router);
   require('./routes/lists')(router);
+  require('./routes/counts')(router);
   require('./routes/system')(router, { config, log });
   const server = createServer({ db, router, isSea: config.isSea, log });
   return { db, router, server };

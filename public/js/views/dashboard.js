@@ -2,13 +2,15 @@
 import { get } from '../api.js';
 import { esc, fmtQty, fmtEur, fmtDateTime, fmtAgo, unitFor, listBadge, statusBadge, emptyState } from '../ui.js';
 import { navigate } from '../app.js';
+import { newListWizard } from './newlist.js';
 
 const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 
 export async function render(el, { can, setActions }) {
   let period = Number(sessionStorage.getItem('ek.dash.period') || 1);
-  const act = setActions(can('stock.count') || can('list.create') ? '<button class="btn btn-primary" id="go-mode">✓ Einkaufsmodus starten</button>' : '');
+  const act = setActions(`${can('stock.count') || can('list.create') ? '<button class="btn" id="go-mode">✓ Einkaufsmodus</button>' : ''}${can('list.create') ? '<button class="btn btn-primary" id="new-list">+ Neue Einkaufsliste</button>' : ''}`);
   act.querySelector('#go-mode')?.addEventListener('click', () => navigate('/mode'));
+  act.querySelector('#new-list')?.addEventListener('click', newListWizard);
 
   const draw = async () => {
     const d = await get(`/api/dashboard?period=${period}`);
@@ -34,7 +36,7 @@ export async function render(el, { can, setActions }) {
         ${kpi('Letzte Bestandskontrolle', d.last_check ? fmtAgo(d.last_check.at) : 'nie', d.last_check && Date.now() - Date.parse(d.last_check.at) < 3 * 864e5 ? 'kpi-ok' : 'kpi-grey', '#/mode', d.last_check ? `${fmtDateTime(d.last_check.at)} · ${esc(d.last_check.user_name || '')}` : '')}
       </div>
       <div class="grid-2">
-        <section class="card"><div class="card-head"><h2>Unter / am Mindestbestand</h2>${c.recommendations && can('list.create') ? '<a class="btn btn-sm" href="#/lists">Liste erstellen</a>' : ''}</div>
+        <section class="card"><div class="card-head"><h2>Unter / am Mindestbestand</h2>${c.recommendations && can('list.create') ? '<button class="btn btn-sm btn-primary" id="nl2">Neue Einkaufsliste</button>' : ''}</div>
           ${d.below.length + d.at_min.length ? `<ul class="art-list">${[...d.below, ...d.at_min].map(artRow).join('')}</ul>` : emptyState('Alle kontrollierten Artikel ausreichend bevorratet.', '✅')}
           ${d.unavailable.length ? `<h3 class="mt">Nicht verfügbar</h3><ul class="art-list">${d.unavailable.map(artRow).join('')}</ul>` : ''}</section>
         <section class="card"><h2>Offene Einkaufslisten &amp; Bestellungen</h2>
@@ -55,6 +57,7 @@ export async function render(el, { can, setActions }) {
         <section class="card"><h2>Lagerwert (kontrollierte Bestände)</h2><div class="big-number">${fmtEur(d.stats.stock_value)}</div></section>
         <section class="card"><h2>Überbestände (über MAX)</h2>${d.stats.overstock.length ? `<ul class="art-list">${d.stats.overstock.map((a) => `<li><span class="grow">${esc(a.name)}<br><small class="muted">Ist ${fmtQty(a.current_stock)} / MAX ${fmtQty(a.max_stock)}</small></span><span class="pill">${fmtEur(a.excess_value)} gebunden</span></li>`).join('')}</ul>` : emptyState('Keine Überbestände – gut für die Kapitalbindung.', '👍')}</section>
       </div>` : ''}`;
+    el.querySelector('#nl2')?.addEventListener('click', newListWizard);
     el.querySelectorAll('[data-p]').forEach((b) => b.addEventListener('click', () => { period = Number(b.dataset.p); sessionStorage.setItem('ek.dash.period', period); draw(); }));
   };
 

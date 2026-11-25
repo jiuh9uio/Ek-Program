@@ -5,6 +5,7 @@ import { esc, toast, modal } from './ui.js';
 const VIEWS = {
   dashboard: { label: 'Dashboard', icon: '▦', load: () => import('./views/dashboard.js') },
   mode: { label: 'Einkaufsmodus', icon: '✓', load: () => import('./views/mode.js'), perm: ['stock.count', 'list.create'] },
+  count: { label: 'Bestandszählungen', icon: '📋', load: () => import('./views/count.js'), perm: ['stock.count'] },
   lists: { label: 'Einkaufslisten', icon: '☰', load: () => import('./views/lists.js') },
   articles: { label: 'Artikel', icon: '▤', load: () => import('./views/articles.js') },
   suppliers: { label: 'Lieferanten', icon: '⛟', load: () => import('./views/suppliers.js') },
