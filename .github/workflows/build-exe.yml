@@ -1,0 +1,50 @@
+name: Windows-EXE bauen
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Abhängigkeiten installieren
+        run: npm ci
+      - name: Tests (Berechnungen, Bestand, Rechte, Druck, Sicherung)
+        run: npm test
+      - name: EXE bauen
+        run: node scripts/build-exe.js --target win-x64
+      - name: EXE unter Windows starten und prüfen
+        shell: pwsh
+        run: |
+          $env:EK_DATA_DIR = "$env:RUNNER_TEMP\ek-data"
+          $p = Start-Process -FilePath "dist\EK-Service.exe" -ArgumentList '--no-browser','--port','18111' -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 30 -and -not $ok; $i++) {
+            Start-Sleep -Seconds 1
+            try { $r = Invoke-RestMethod http://127.0.0.1:18111/api/health; $ok = $r.ok } catch {}
+          }
+          if (-not $ok) { throw 'EK-Service.exe startet nicht' }
+          $page = Invoke-WebRequest http://127.0.0.1:18111/ -UseBasicParsing
+          if ($page.Content -notmatch 'EK-Service') { throw 'Oberfläche fehlt' }
+          $s = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+          $h = @{ 'X-EK-Client' = '1' }
+          Invoke-RestMethod -Method Post -Uri http://127.0.0.1:18111/api/auth/login -Headers $h -ContentType 'application/json' -Body '{"username":"admin","password":"admin"}' -WebSession $s | Out-Null
+          Invoke-RestMethod -Method Post -Uri http://127.0.0.1:18111/api/demo-data -Headers $h -WebSession $s | Out-Null
+          $arts = Invoke-RestMethod -Uri http://127.0.0.1:18111/api/articles -WebSession $s
+          if ($arts.Count -lt 10) { throw 'Datenbank funktioniert nicht' }
+          $w = Invoke-RestMethod -Uri http://127.0.0.1:18111/api/printers-windows -WebSession $s
+          Write-Host "Windows-Drucker abfragbar: $($w.available) ($($w.printers.Count) gefunden)"
+          if (-not (Test-Path "$env:RUNNER_TEMP\ek-data\ek-service.db")) { throw 'Datenbankdatei fehlt' }
+          Stop-Process -Id $p.Id
+          Write-Host 'EXE-Prüfung erfolgreich.'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EK-Service-Windows
+          path: dist/EK-Service.exe
+          retention-days: 30
