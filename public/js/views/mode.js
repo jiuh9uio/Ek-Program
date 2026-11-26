@@ -1,5 +1,6 @@
 // Schneller Einkaufsmodus: Schnellauswahl & Bestandskontrolle (touchoptimiert, automatische Speicherung).
 import { get, post } from '../api.js';
+import { sound, haptic, pop } from '../reward.js';
 import { orderText, esc, fmtQty, fmtAgo, unitFor, parseNum, statusBadge, toast, debounce, matches, promptDialog, emptyState } from '../ui.js';
 import { navigate } from '../app.js';
 
@@ -225,11 +226,13 @@ export async function render(el, { can, setActions }) {
     const step = a.step > 0 ? a.step : (a.order_step > 0 ? a.order_step : 1);
 
     if (act === 'toggle') {
+      if (!a.item) { sound.pop(); haptic(12); } else sound.soft();
       if (a.item) { a.item = null; replaceCard(a); qtySavers.get(id)?.cancel(); send(`qty-${id}`, '/api/mode/item', { article_id: id, qty: null }, id); return; }
       const inp = card.querySelector('[data-field="qty"]');
       let q = parseNum(inp?.value);
       if (!(q > 0)) q = a.recommended > 0 ? a.recommended : Math.max(step, a.min_order_qty || 0);
       a.item = { qty: q, note: null, source: 'quick' };
+      setTimeout(() => pop(listEl.querySelector(`.mcard[data-id="${id}"] .bigcheck`)), 20);
       replaceCard(a);
       qtySavers.get(id)?.cancel();
       send(`qty-${id}`, '/api/mode/item', { article_id: id, qty: q }, id);
@@ -254,6 +257,7 @@ export async function render(el, { can, setActions }) {
       card.classList.toggle('is-on', next > 0);
       saveQty(id, next || null);
     } else if (act === 'ok') {
+      sound.success(); haptic(15);
       stockSavers.get(id)?.cancel(); qtySavers.get(id)?.cancel();
       await send(`ok-${id}`, '/api/mode/ok', { article_id: id }, id);
     } else if (act === 'unavail') {

@@ -4,6 +4,21 @@ import { esc, fmtQty, fmtEur, fmtDateTime, unitFor, parseNum, toast, confirmDial
 import { navigate } from '../app.js';
 import { newListWizard } from './newlist.js';
 import { shareButtons, bindShare } from './share.js';
+import { sound, haptic, pop, floatText, confetti, celebrate, checkAchievements } from '../reward.js';
+
+const MILESTONES = [[25, '🚀', 'Ein Viertel geschafft!'], [50, '💪', 'Halbzeit!'], [75, '🏁', 'Endspurt – drei Viertel geschafft!']];
+const COMBOS = { 5: '🔥 5 in Folge!', 10: '🔥🔥 10 in Folge – starkes Tempo!', 20: '⚡ 20 in Folge – Zählmaschine!', 40: '🌟 40 in Folge – unglaublich!' };
+
+/** Zählbilanz: Dauer, Ø je Artikel, geschätzte Zeitersparnis. */
+function countStats(c) {
+  const times = c.items.filter((i) => i.counted_at).map((i) => Date.parse(i.counted_at)).sort((a, b) => a - b);
+  if (!times.length) return null;
+  const start = Math.min(Date.parse(c.created_at), times[0]);
+  const secs = Math.max(1, Math.round((times.at(-1) - start) / 1000));
+  const n = times.length;
+  const fmt = (s) => (s >= 3600 ? `${Math.floor(s / 3600)} Std. ${Math.round((s % 3600) / 60)} Min.` : s >= 60 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} Min.` : `${s} Sek.`);
+  return { n, duration: fmt(secs), avg: Math.round(secs / n), saved: Math.round((n * 30) / 60) };
+}
 
 export async function render(el, ctx) {
   if (ctx.params[0]) return renderSession(el, ctx, Number(ctx.params[0]));
@@ -145,6 +160,8 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
         ${rest.length ? '<button class="btn btn-lg" id="cont">Offene/übersprungene weiterzählen</button>' : ''}
         <a class="btn btn-lg" href="#/lists/${c.list_id}">🛒 Einkaufsliste ${esc(c.list_number || '')} ansehen</a>
       </div>` : `<div class="done-box mt">
+        ${countStats(c) ? `<div class="rw-stats"><div><span>Gezählt</span><b>${countStats(c).n} Artikel</b></div><div><span>Dauer</span><b>${countStats(c).duration}</b></div>
+          <div><span>Ø pro Artikel</span><b>${countStats(c).avg < 1 ? "< 1" : countStats(c).avg} Sek.</b></div><div title="Schätzung: Liste schreiben und Mengen ausrechnen entfällt (≈ 30 Sekunden je Artikel)"><span>Zeit gespart (ca.)</span><b>${countStats(c).saved} Min. ⏱️</b></div></div>` : ''}
         ${s.on_list ? `<p class="done-title">✅ Einkaufsliste <b>${esc(c.list_number || '')}</b> ist fertig – ${s.on_list} Position${s.on_list === 1 ? '' : 'en'}, ca. ${fmtEur(s.order_value)}</p>
         <p class="muted">Sie steht ${finishedDays} Tag${finishedDays === 1 ? '' : 'e'} lang oben auf dem Dashboard und bleibt dauerhaft unter „Einkaufslisten“ gespeichert.</p>
         ${shareButtons(c.list_id)}
@@ -182,9 +199,35 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
     bindResult();
   }
 
+  let combo = 0; let lastSave = 0;
+  function rewardCount(before, wasCounted) {
+    const s = c.summary;
+    const pct = (x) => Math.floor(((x.counted + x.skipped) / Math.max(1, x.total)) * 100);
+    const p0 = pct(before); const p1 = pct(s);
+    combo = Date.now() - lastSave < 45000 && !wasCounted ? combo + 1 : 1;
+    lastSave = Date.now();
+    sound.tick(); haptic(10);
+    setTimeout(() => {
+      pop(el.querySelector('.count-progress'));
+      floatText(el.querySelector('.count-progress'), '+1 ✓');
+    }, 30);
+    if (p1 >= 100 && p0 < 100) {
+      sound.milestone(); haptic([20, 30, 20]); confetti({ amount: 70, duration: 1800 });
+      celebrate({ icon: '🎉', title: 'Alles gezählt!', text: 'Jetzt nur noch „✓ Fertigstellen“ tippen.' });
+    } else {
+      const m = MILESTONES.find(([v]) => p0 < v && p1 >= v);
+      if (m) { sound.milestone(); haptic([15, 25, 15]); celebrate({ icon: m[1], title: m[2], text: `${s.counted} von ${s.total} Artikeln gezählt`, ms: 2200 }); }
+      else if (COMBOS[combo]) celebrate({ icon: '🔥', title: COMBOS[combo], ms: 1800 });
+    }
+  }
+
   async function save(body, advance) {
     try {
+      const before = c.summary;
+      const wasCounted = cur.state === 'counted';
       c = await post(`/api/counts/${id}/items/${cur.id}`, body, { quiet: true });
+      if (body.counted_qty !== undefined) rewardCount(before, wasCounted);
+      else if (body.skip) sound.soft();
       const updated = c.items.find((x) => x.id === cur.id);
       if (advance) select(firstOpen(updated.seq));
       else { cur = updated; draw(); }
@@ -197,8 +240,12 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
     if (rest && !(await confirmDialog(`${rest} Artikel wurden nicht gezählt und bleiben „nicht kontrolliert“. Trotzdem fertigstellen?`, { ok: '✓ Fertigstellen' }))) return;
     try {
       c = await post(`/api/counts/${id}/finish`);
-      toast(c.summary.on_list ? `Einkaufsliste ${c.list_number} ist fertig.` : 'Zählung abgeschlossen – nichts nachzukaufen.', 'success');
       select(null);
+      sound.fanfare(); haptic([30, 50, 30, 50, 60]); confetti();
+      const st = countStats(c);
+      await celebrate({ icon: '🏆', big: true, title: c.summary.on_list ? `Einkaufsliste ${c.list_number} ist fertig!` : 'Zählung abgeschlossen – alles da!',
+        text: st ? `${st.n} Artikel in ${st.duration} gezählt` : '' , ms: 2800 });
+      checkAchievements();
     } catch (e) { toast(e.message, 'error'); }
   }
 

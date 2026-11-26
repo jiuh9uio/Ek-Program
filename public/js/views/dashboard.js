@@ -4,6 +4,9 @@ import { esc, fmtQty, fmtEur, fmtDateTime, fmtAgo, unitFor, listBadge, statusBad
 import { navigate } from '../app.js';
 import { newListWizard } from './newlist.js';
 import { shareButtons, bindShare } from './share.js';
+import { greeting, confetti, sound } from '../reward.js';
+import { levelBar } from './achievements.js';
+import { state } from '../app.js';
 
 const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 
@@ -14,7 +17,7 @@ export async function render(el, { can, setActions }) {
   act.querySelector('#new-list')?.addEventListener('click', newListWizard);
 
   const draw = async () => {
-    const [d, fin] = await Promise.all([get(`/api/dashboard?period=${period}`), get('/api/lists-finished').catch(() => ({ lists: [], days: 2 }))]);
+    const [d, fin, ach] = await Promise.all([get(`/api/dashboard?period=${period}`), get('/api/lists-finished').catch(() => ({ lists: [], days: 2 })), get('/api/me/achievements', { quiet: true }).catch(() => null)]);
     const c = d.counts;
     const kpi = (label, value, cls, href, sub = '') => `<a class="kpi ${cls}" ${href ? `href="${href}"` : ''}><span>${label}</span><strong>${value}</strong>${sub ? `<small>${sub}</small>` : ''}</a>`;
     const artRow = (a) => `<li><span class="grow"><strong>${esc(a.name)}</strong><br><small class="muted">${esc(a.location_name || '')} · Ist ${a.current_stock === null ? '–' : fmtQty(a.current_stock)} / MIN ${fmtQty(a.min_stock)} / MAX ${fmtQty(a.max_stock)}</small></span>
@@ -30,7 +33,19 @@ export async function render(el, { can, setActions }) {
         <a class="finished-info" href="#/lists/${l.id}"><strong>${esc(l.number)}</strong> ${listBadge(l.status)} <span>${esc(l.title || '')}</span>
           <small class="muted">${fmtDateTime(l.ready_at)} · ${l.positions} Pos. · ${fmtEur(l.est_total)}${l.print_count ? ` · ${l.print_count}× gedruckt` : ''}${l.mail_count ? ` · ${l.mail_count}× gemailt` : ''}</small></a>
         ${shareButtons(l.id, { big: false })}</div>`).join('')}</section>` : '';
-    el.innerHTML = `${finished}
+    const h = d.health;
+    const allGood = h.total > 0 && h.percent === 100;
+    const ringColor = h.percent >= 90 ? '#16a34a' : h.percent >= 70 ? '#eab308' : '#dc2626';
+    const hero = `<section class="hero card">
+      <div class="hero-main"><h2>${esc(greeting(state.user.display_name))}</h2>
+        <p class="muted">${ach && ach.stats.today_counted ? `Heute schon <b>${ach.stats.today_counted}</b> Artikel gezählt – super! 🙌` : 'Bereit für den nächsten Einkauf? Eine Zählung dauert nur wenige Minuten.'}
+        ${ach && ach.stats.week_streak > 1 ? ` · 📅 ${ach.stats.week_streak} Wochen in Folge dabei` : ''}</p>
+        ${ach ? `<a href="#/achievements" class="hero-lvl">${levelBar(ach)}<small class="muted">🏆 ${ach.earned} von ${ach.badges.length} Abzeichen – ansehen →</small></a>` : ''}</div>
+      <a class="health" href="#/articles" title="Anteil der Artikel, die ausreichend vorhanden oder bereits nachbestellt sind">
+        <div class="ring" style="--p:${h.percent};--c:${ringColor}"><span>${h.percent}%</span></div>
+        <div><b>Lagergesundheit</b><small class="muted">${h.good} von ${h.total} Artikeln im grünen Bereich${allGood ? ' – perfekt! 🎉' : ''}</small></div></a>
+    </section>`;
+    el.innerHTML = `${hero}${finished}
       <div class="kpi-grid">
         ${kpi('Unter Mindestbestand', c.below, c.below ? 'kpi-red' : 'kpi-ok', '#/articles', 'sofort nachbestellen')}
         ${kpi('Am Mindestbestand', c.at_min, c.at_min ? 'kpi-yellow' : 'kpi-ok', '#/articles')}
@@ -65,6 +80,8 @@ export async function render(el, { can, setActions }) {
       </div>` : ''}`;
     el.querySelector('#nl2')?.addEventListener('click', newListWizard);
     bindShare(el, { onDone: () => draw() });
+    const key = `ek.health.celebrated.${new Date().toDateString()}`;
+    if (allGood && !sessionStorage.getItem(key)) { sessionStorage.setItem(key, '1'); setTimeout(() => { confetti({ amount: 60, duration: 1800 }); sound.success(); }, 400); }
     el.querySelectorAll('[data-p]').forEach((b) => b.addEventListener('click', () => { period = Number(b.dataset.p); sessionStorage.setItem('ek.dash.period', period); draw(); }));
   };
 

@@ -50,6 +50,12 @@ function dashboard(db, { department = 'service', withStats = false, months = 12,
       recommendations_value: round3(recValue),
     },
     stats: null,
+    // Lagergesundheit (Team): Anteil der Artikel, die ausreichend vorhanden oder bereits nachbestellt sind
+    health: {
+      percent: arts.length ? Math.round((arts.filter((a) => ['ok', 'ordered'].includes(a.status)).length / arts.length) * 100) : 0,
+      good: arts.filter((a) => ['ok', 'ordered'].includes(a.status)).length,
+      total: arts.length,
+    },
   };
 
   if (withStats) {

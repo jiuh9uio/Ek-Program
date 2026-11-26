@@ -2,6 +2,7 @@
 import { get, post } from '../api.js';
 import { esc, toast, modal, download } from '../ui.js';
 import { can } from '../app.js';
+import { sound, haptic, checkAchievements } from '../reward.js';
 
 const noop = () => {};
 
@@ -82,6 +83,7 @@ export async function printBonDialog(id, { onDone = noop } = {}) {
         const errs = r.results.filter((x) => x.status === 'error');
         if (errs.length) { toast(`Druckfehler: ${errs[0].error}`, 'error', 9000); onDone(); return false; }
         toast(`${r.results.length} Bon(s) an ${r.results[0].printer} gesendet.`, 'success');
+        sound.success(); haptic(15); checkAchievements();
         onDone();
       },
     }],
@@ -137,7 +139,8 @@ export async function emailDialog(id, { onDone = noop } = {}) {
         const f = mm.body.querySelector('#mf');
         if (!f.to.value.trim()) throw new Error('Bitte einen Empfänger eingeben.');
         const r = await post(`/api/lists/${id}/email`, { to: f.to.value, cc: f.cc.value, subject: f.subject.value, message: f.message.value, group: f.group.value, prices: f.prices.checked });
-        toast(`E-Mail an ${[...r.to, ...r.cc].join(', ')} gesendet.`, 'success', 5000);
+        toast(`E-Mail an ${[...r.to, ...r.cc].join(', ')} gesendet. ✉️`, 'success', 5000);
+        sound.success(); haptic(15); checkAchievements();
         onDone();
       },
     }],

@@ -209,6 +209,9 @@ module.exports = function register(router, { config, log }) {
     } finally { fs.rmSync(tmp, { force: true }); }
   });
 
+  // Persönliche Erfolge (Abzeichen, Level)
+  router.get('/api/me/achievements', {}, ({ db, user }) => require('../services/achievements').achievements(db, user.id));
+
   router.get('/api/health', { auth: false }, () => ({ ok: true, version: require('../version').VERSION }));
 };
 

@@ -81,6 +81,16 @@ Spalten werden über ihren Namen erkannt, z. B. *Artikel/Bezeichnung*, *MIN/Mind
 
 Pro Artikel lassen sich eine **Bestelleinheit** und ihr **Inhalt** hinterlegen, z. B. *Karton à 6 Flaschen*. Gezählt wird weiter in Flaschen. Vorgeschlagen werden aber immer ganze Kartons: *„Nachkaufen: 2 Kartons (= 12 Flaschen)“*. Mit −/+ änderst du die Menge kartonweise oder trägst sie selbst ein. Bon und PDF drucken „2 Kartons“, darunter „= 12 Flaschen“.
 
+## Belohnungen & angenehme Bedienung
+
+- **Sofort-Feedback:** sanfte Töne, kurze Vibration auf Handy/Tablet, kleine Animationen beim Zählen, Abhaken, Speichern, Drucken und Mailen.
+- **Zählung:** Fortschrittsbalken mit „+1 ✓“, Meilensteine (¼, Halbzeit, Endspurt), Serien („🔥 10 in Folge“), Konfetti bei „Alles gezählt“ und beim Fertigstellen.
+- **Erfolgsbilanz** nach jeder Zählung: Anzahl, Dauer, Ø Sekunden pro Artikel, geschätzte gesparte Zeit (≈ 30 s je Artikel für Liste schreiben und Mengen ausrechnen).
+- **Meine Erfolge:** Level von *Neuling* bis *Inventur-Großmeister*, Erfahrungspunkte und 13 Abzeichen (z. B. *Erste Zählung*, *Vollständig*, *Blitzzähler*, *Dranbleiber*), jeweils mit Freischalt-Feier.
+- **Dashboard:** persönliche Begrüßung, Tagesbilanz, Level-Leiste und **Lagergesundheit** des Teams als Ring. Wenn alles im grünen Bereich ist, gibt es einmal am Tag Konfetti.
+- **Einstellbar pro Gerät** (unten links auf den Namen tippen): Töne, Vibration, Animationen/Konfetti. „Bewegung reduzieren“ des Betriebssystems wird automatisch beachtet.
+- **Bewusst ohne** Ranglisten zwischen Mitarbeitern und ohne Druck- oder Verlustmeldungen: Erfolge sind persönlich, die Lagergesundheit gehört dem ganzen Team.
+
 ## Funktionen
 
 | Bereich | Umfang |
@@ -180,7 +190,7 @@ scripts/build-exe.js   EXE-Erstellung
 ```bash
 npm install
 npm start                 # http://localhost:8080
-npm test                  # 46 Tests: Berechnungen, Bestandsbuchungen, Rechte, Druck (simulierte Drucker), PDF, Sicherung
+npm test                  # 49 Tests: Berechnungen, Bestandsbuchungen, Rechte, Druck (simulierte Drucker), PDF, Sicherung
 npm run build:exe         # → dist/EK-Service.exe (Windows x64, mit Programmsymbol; baubar unter Windows/Linux/macOS)
 node scripts/make-icon.js # Programmsymbol assets/icon.ico aus assets/icon.svg neu erzeugen (benötigt Playwright)
 ```

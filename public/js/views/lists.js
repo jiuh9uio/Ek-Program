@@ -4,6 +4,7 @@ import { orderText, esc, fmtQty, fmtEur, fmtDateTime, unitFor, parseNum, listBad
 import { navigate } from '../app.js';
 import { newListWizard } from './newlist.js';
 import { printBonDialog, pdfOptionsDialog, printA4, emailDialog } from './share.js';
+import { sound, haptic, confetti, celebrate, checkAchievements } from '../reward.js';
 
 export async function render(el, ctx) {
   if (ctx.params[0]) return renderDetail(el, ctx, Number(ctx.params[0]));
@@ -97,6 +98,9 @@ async function renderDetail(el, { can, setTitle, setActions }, id) {
       const r = await post(`/api/lists/${id}/status`, { status: a });
       r.warnings.forEach((w) => toast(w, 'warn', 7000));
       toast(`Status: ${LIST_STATUS[r.status].label}`, 'success');
+      if (['ready', 'ordered', 'closed'].includes(r.status)) { sound.success(); haptic(15); }
+      if (r.status === 'ready') { confetti({ amount: 80, duration: 1800 }); celebrate({ icon: '✅', title: `Einkaufsliste ${r.list.number} ist fertig!`, text: 'Jetzt drucken oder per E-Mail versenden.' }); checkAchievements(); }
+      if (r.status === 'closed') celebrate({ icon: '📁', title: 'Erledigt & abgelegt', text: `${r.list.number} ist abgeschlossen.`, ms: 2200 });
       reload(r.list);
     } catch (e) { toast(e.message, 'error'); }
   }
@@ -348,6 +352,9 @@ async function renderDetail(el, { can, setTitle, setActions }, id) {
           if (!entries.length) throw new Error('Keine Mengen erfasst.');
           const r = await post(`/api/lists/${id}/receive`, { entries, note: mm.body.querySelector('#rnote').value });
           toast(`Wareneingang gebucht (${r.booked} Pos.). Status: ${LIST_STATUS[r.status].label}`, 'success');
+          sound.success(); haptic(15);
+          if (r.status === 'delivered') { confetti({ amount: 90 }); celebrate({ icon: '📥', title: 'Alles geliefert!', text: 'Der Bestand ist aufgefüllt.' }); }
+          checkAchievements();
           reload(r.list);
         },
       }],

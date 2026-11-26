@@ -1,6 +1,7 @@
 // Einstieg der Oberfläche: Anmeldung, Navigation, Hash-Router.
 import { get, post, setUnauthorizedHandler } from './api.js';
 import { esc, toast, modal } from './ui.js';
+import { setUser, prefs as rwPrefs, setPrefs as rwSetPrefs, checkAchievements, sound } from './reward.js';
 
 const VIEWS = {
   dashboard: { label: 'Dashboard', icon: '▦', load: () => import('./views/dashboard.js') },
@@ -12,6 +13,7 @@ const VIEWS = {
   master: { label: 'Stammdaten', icon: '⚙', load: () => import('./views/master.js'), perm: ['articles.manage'] },
   printers: { label: 'Drucker', icon: '⎙', load: () => import('./views/printers.js'), perm: ['printers.manage'] },
   users: { label: 'Benutzer', icon: '👤', load: () => import('./views/users.js'), perm: ['users.manage'] },
+  achievements: { label: 'Meine Erfolge', icon: '🏆', load: () => import('./views/achievements.js') },
   audit: { label: 'Protokoll', icon: '⧗', load: () => import('./views/audit.js'), perm: ['system.manage'] },
   settings: { label: 'System', icon: '⛭', load: () => import('./views/settings.js'), perm: ['system.manage'] },
 };
@@ -39,6 +41,8 @@ function applyMe(me) {
   state.company = me.company_name;
   state.catalog = me.permissions_catalog;
   state.defaultAdminPassword = me.default_admin_password;
+  setUser(me.user.id);
+  setTimeout(() => checkAchievements(), 1500);
 }
 
 // ---------------- Anmeldung (touchfreundlich: Benutzerkacheln + PIN-Feld) ----------------
@@ -125,9 +129,16 @@ function userMenu() {
         <label class="field"><span>Neues Passwort/PIN (mind. 4 Zeichen)</span><input type="password" name="next" required minlength="4"></label>
         <button class="btn" type="submit">Passwort ändern</button>
       </form>
+      <hr><h3>Rückmeldungen auf diesem Gerät</h3>
+      <div class="form-grid" id="rw-prefs">
+        <label class="check"><input type="checkbox" data-rw="sound" ${rwPrefs().sound ? 'checked' : ''}> 🔊 Töne</label>
+        <label class="check"><input type="checkbox" data-rw="haptics" ${rwPrefs().haptics ? 'checked' : ''}> 📳 Vibration (Smartphone/Tablet)</label>
+        <label class="check"><input type="checkbox" data-rw="motion" ${rwPrefs().motion ? 'checked' : ''}> ✨ Animationen &amp; Konfetti</label>
+      </div>
       <hr><details><summary>Meine Berechtigungen</summary><ul class="perm-list">${state.user.permissions.map((p) => `<li>${esc(state.catalog[p] || p)}</li>`).join('')}</ul></details>`,
     actions: [{ label: 'Abmelden', cls: 'btn-danger', onClick: async () => { await post('/api/auth/logout'); state.user = null; renderLogin(); } }, { label: 'Schließen' }],
   });
+  m.body.querySelectorAll('[data-rw]').forEach((c) => c.addEventListener('change', () => { rwSetPrefs({ [c.dataset.rw]: c.checked }); if (c.dataset.rw === 'sound' && c.checked) sound.success(); }));
   m.body.querySelector('#pw-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = e.target;
