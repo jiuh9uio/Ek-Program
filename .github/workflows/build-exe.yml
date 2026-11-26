@@ -80,8 +80,49 @@ jobs:
           if (Test-Path "$env:EK_DATA_DIR\laeuft.json") { throw 'Laufzeitdatei wurde nicht aufgeräumt' }
           Get-Content "$env:EK_DATA_DIR\logs\ek-service.log"
           Write-Host 'Programmverhalten OK.'
+      - name: Update-Datei (EK-Service-Update.bat) prüfen
+        shell: pwsh
+        run: |
+          $inst = "$env:RUNNER_TEMP\ek-install"
+          New-Item -ItemType Directory -Force "$inst\ek-data" | Out-Null
+          Copy-Item "C:\Windows\System32\notepad.exe" "$inst\EK-Service.exe"   # "alte" Version
+          Set-Content "$inst\ek-data\ek-service.db" 'alte-daten'
+          Copy-Item windows\EK-Service-Update.bat $inst\
+          $zip = "$env:RUNNER_TEMP\web\EK-Service-Windows.zip"
+          New-Item -ItemType Directory -Force (Split-Path $zip) | Out-Null
+          Compress-Archive -Path dist\EK-Service.exe, windows\EK-Service-Update.bat -DestinationPath $zip -Force
+          $want = (Get-FileHash dist\EK-Service.exe).Hash
+          $env:EK_UPDATE_YES = '1'
+          # 1) Update aus ZIP-Datei
+          $env:EK_UPDATE_SOURCE = $zip
+          cmd /c "`"$inst\EK-Service-Update.bat`""
+          if ($LASTEXITCODE -ne 0) { throw "Update aus Datei fehlgeschlagen ($LASTEXITCODE)" }
+          if ((Get-FileHash "$inst\EK-Service.exe").Hash -ne $want) { throw 'EXE wurde nicht ersetzt' }
+          if (-not (Get-ChildItem "$inst\alte-versionen\EK-Service_*.exe")) { throw 'Alte Version nicht gesichert' }
+          if (-not (Get-ChildItem "$inst\ek-data\backups\*vorupdate.db")) { throw 'Datenbank nicht gesichert' }
+          Write-Host "Version nach Update: $((Get-Item "$inst\EK-Service.exe").VersionInfo.ProductVersion)"
+          # 2) Fehlerfall: Webseite statt Datei → Abbruch, EXE unverändert
+          Set-Content "$env:RUNNER_TEMP\kaputt.zip" '<html>Bitte anmelden</html>'
+          $env:EK_UPDATE_SOURCE = "$env:RUNNER_TEMP\kaputt.zip"
+          cmd /c "`"$inst\EK-Service-Update.bat`""
+          if ($LASTEXITCODE -ne 1) { throw "Fehlerfall nicht erkannt ($LASTEXITCODE)" }
+          if ((Get-FileHash "$inst\EK-Service.exe").Hash -ne $want) { throw 'EXE trotz Fehler verändert' }
+          # 3) Update über Download-Link (lokaler Webserver)
+          Copy-Item "C:\Windows\System32\notepad.exe" "$inst\EK-Service.exe" -Force
+          $web = Start-Process python -ArgumentList '-m', 'http.server', '18130', '--directory', (Split-Path $zip) -PassThru -WindowStyle Hidden
+          Start-Sleep 3
+          $env:EK_UPDATE_SOURCE = 'http://127.0.0.1:18130/EK-Service-Windows.zip'
+          cmd /c "`"$inst\EK-Service-Update.bat`""
+          $rc = $LASTEXITCODE
+          Stop-Process -Id $web.Id
+          if ($rc -ne 0) { throw "Update über Link fehlgeschlagen ($rc)" }
+          if ((Get-FileHash "$inst\EK-Service.exe").Hash -ne $want) { throw 'EXE nach Link-Update falsch' }
+          if ((Get-Content "$inst\update-link.txt").Trim() -ne $env:EK_UPDATE_SOURCE) { throw 'Link wurde nicht gespeichert' }
+          Write-Host 'Update-Datei OK.'
       - uses: actions/upload-artifact@v4
         with:
           name: EK-Service-Windows
-          path: dist/EK-Service.exe
+          path: |
+            dist/EK-Service.exe
+            windows/EK-Service-Update.bat
           retention-days: 30

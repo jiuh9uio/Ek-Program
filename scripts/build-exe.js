@@ -169,6 +169,7 @@ async function main() {
   // Symbol erst nach der Injektion setzen (resedit übernimmt alle Ressourcen inkl. NODE_SEA_BLOB)
   if (target.startsWith('win')) setWindowsIconAndVersion(out);
   if (target.startsWith('win') && !args.includes('--console')) setGuiSubsystem(out);
+  if (target.startsWith('win')) fs.copyFileSync(path.join(ROOT, 'windows', 'EK-Service-Update.bat'), path.join(DIST, 'EK-Service-Update.bat'));
   const mb = (fs.statSync(out).size / 1024 / 1024).toFixed(1);
   log(`Fertig: ${path.relative(ROOT, out)} (${mb} MB, Node ${nodeVersion})`);
 }

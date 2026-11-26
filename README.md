@@ -87,6 +87,24 @@ Spalten werden über ihren Namen erkannt, z. B. *Artikel/Bezeichnung*, *MIN/Mind
 
 Pro Artikel lassen sich eine **Bestelleinheit** und ihr **Inhalt** hinterlegen, z. B. *Karton à 6 Flaschen*. Gezählt wird weiter in Flaschen. Vorgeschlagen werden aber immer ganze Kartons: *„Nachkaufen: 2 Kartons (= 12 Flaschen)“*. Mit −/+ änderst du die Menge kartonweise oder trägst sie selbst ein. Bon und PDF drucken „2 Kartons“, darunter „= 12 Flaschen“.
 
+## Updates einspielen (EK-Service-Update.bat)
+
+Neben der EXE liegt **`EK-Service-Update.bat`**. Doppelklick, und das Update läuft geführt:
+
+1. **[1] Update über Download-Link:** Link zur neuen ZIP- oder EXE-Datei einfügen (Rechtsklick fügt ein). Der Link wird gespeichert; beim nächsten Update genügt **Enter**. Dropbox-, Google-Drive- und OneDrive-Teilen-Links werden automatisch in Direkt-Downloads umgewandelt.
+2. **[2] Update aus heruntergeladener Datei:** ZIP/EXE einfach ins Fenster ziehen. Enter nimmt automatisch die neueste EK-Service-Datei aus dem Download-Ordner.
+3. **[3] Vorherige Version wiederherstellen:** falls nach einem Update etwas nicht passt (die letzten 3 Versionen werden aufbewahrt).
+4. **[4] Desktop-Verknüpfung „EK-Service aktualisieren“** anlegen.
+
+Bei jedem Update geschieht automatisch:
+- Prüfung, ob der Download wirklich eine EK-Service-EXE/ZIP ist und keine Webseite.
+- Warten, bis EK-Service geschlossen ist (oder auf Nachfrage beenden).
+- **Sicherung** der alten EXE (`alte-versionen\`) und der **Datenbank** (`ek-data\backups\…_vorupdate.db`).
+- Austausch der EXE; bei einem Fehler wird der alte Stand wiederhergestellt.
+- Anzeige alte → neue Version, auf Wunsch Neustart.
+
+Die Daten (`ek-data`) bleiben bei Updates unverändert; neue Programmversionen passen die Datenbank beim ersten Start automatisch an.
+
 ## Barcodes, QR-Codes & Etiketten
 
 **Codes je Artikel:** Im Artikel (Artikel → antippen → „🏷️ Barcodes / QR-Codes“) lassen sich beliebig viele Codes hinterlegen. Beispiele:

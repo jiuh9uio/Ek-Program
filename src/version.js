@@ -1,2 +1,4 @@
 'use strict';
-module.exports = { VERSION: '1.0.0', NAME: 'EK-Service' };
+const { version } = require('../package.json');
+
+module.exports = { VERSION: version, NAME: 'EK-Service' };
