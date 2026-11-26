@@ -14,6 +14,7 @@ module.exports = function register(router) {
   router.get('/api/counts/:id', { perm }, ({ db, params }) => C.loadCount(db, Number(params.id)));
   router.post('/api/counts/:id/items/:itemId', { perm }, ({ db, user, can, params, body }) => C.recordItem(db, user, can, Number(params.id), Number(params.itemId), body));
   router.post('/api/counts/:id/complete', { perm }, ({ db, user, params }) => C.completeCount(db, user, Number(params.id)));
+  router.post('/api/counts/:id/finish', { perm }, ({ db, user, can, params }) => C.finishCount(db, user, can, Number(params.id)));
   router.get('/api/counts/:id/export.csv', { perm }, ({ db, params }) => {
     const c = C.loadCount(db, Number(params.id));
     const lines = ['Nr;Artikelnummer;Artikel;Lagerort;Einheit;Soll (letzter Bestand);Gezählt;Differenz;Bestellt;Gezählt von;Zeitpunkt'];

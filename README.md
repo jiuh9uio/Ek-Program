@@ -54,6 +54,16 @@ Der Ablauf funktioniert wie in Inventursystemen großer Firmen:
    - Was bereits auf einer anderen offenen Bestellung steht, wird abgezogen. So entstehen keine Doppelbestellungen.
 6. Am Ende zeigt die Übersicht den Bestellvorschlag und die **Soll/Ist-Differenzen** zur letzten Zählung (Verbrauch/Schwund). Von dort geht es direkt zur Einkaufsliste mit Bondruck, PDF und Freigabe.
 
+7. Zum Schluss **„✓ Fertigstellen“** drücken. Die Einkaufsliste wird einkaufsbereit, und es erscheinen vier große Knöpfe:
+   - **📄 PDF ansehen**: öffnen, speichern, weiterleiten.
+   - **🖨️ A4 drucken**: druckfertige A4-Seite mit Abhak-Kästchen. Der Windows-Druckdialog öffnet sich automatisch; Drucker auswählen, fertig.
+   - **🧾 Bon drucken**: direkt auf den Bondrucker, ohne Dialog.
+   - **✉️ E-Mail senden**: PDF als Anhang an Standard-Empfänger oder Lieferanten (mit einem Tipp hinzufügbar).
+
+   Fertige Listen stehen **2 Tage** (einstellbar unter *System*) oben auf dem Dashboard mit denselben Knöpfen. Danach verschwinden sie aus dieser Schnellansicht, bleiben aber dauerhaft unter *Einkaufslisten* gespeichert.
+
+**E-Mail einrichten (einmalig):** *System → E-Mail-Versand*. Anbieter antippen (Gmail, Outlook/Microsoft 365, IONOS, Strato, GMX, WEB.DE, T-Online), dann Benutzer, Passwort und Absender eintragen und **„Test-E-Mail senden“**. Bei Gmail und Microsoft ist ein **App-Passwort** nötig, nicht das normale Passwort. Das Passwort wird in der lokalen Datenbank gespeichert und nie an die Oberfläche zurückgegeben.
+
 Mit Tastatur geht es noch schneller: Zahl tippen und *Enter* drücken. Alle Zählbelege bleiben unter **Bestandszählungen** nachvollziehbar und lassen sich als CSV exportieren.
 
 ## MIN/MAX von Claude berechnen lassen und per Tabelle einfügen
@@ -170,7 +180,7 @@ scripts/build-exe.js   EXE-Erstellung
 ```bash
 npm install
 npm start                 # http://localhost:8080
-npm test                  # 42 Tests: Berechnungen, Bestandsbuchungen, Rechte, Druck (simulierte Drucker), PDF, Sicherung
+npm test                  # 46 Tests: Berechnungen, Bestandsbuchungen, Rechte, Druck (simulierte Drucker), PDF, Sicherung
 npm run build:exe         # → dist/EK-Service.exe (Windows x64, mit Programmsymbol; baubar unter Windows/Linux/macOS)
 node scripts/make-icon.js # Programmsymbol assets/icon.ico aus assets/icon.svg neu erzeugen (benötigt Playwright)
 ```

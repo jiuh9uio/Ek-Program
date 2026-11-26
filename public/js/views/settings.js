@@ -2,6 +2,16 @@
 import { get, put, post, api } from '../api.js';
 import { esc, fmtDateTime, toast, confirmDialog, download, emptyState } from '../ui.js';
 
+const MAIL_PRESETS = {
+  Gmail: { host: 'smtp.gmail.com', port: 465, secure: 'ssl' },
+  'Outlook / Microsoft 365': { host: 'smtp.office365.com', port: 587, secure: 'starttls' },
+  IONOS: { host: 'smtp.ionos.de', port: 465, secure: 'ssl' },
+  Strato: { host: 'smtp.strato.de', port: 465, secure: 'ssl' },
+  'GMX': { host: 'mail.gmx.net', port: 465, secure: 'ssl' },
+  'WEB.DE': { host: 'smtp.web.de', port: 587, secure: 'starttls' },
+  'T-Online': { host: 'securesmtp.t-online.de', port: 465, secure: 'ssl' },
+};
+
 export async function render(el) {
   const s = await get('/api/settings');
   el.innerHTML = `<div class="grid-2">
@@ -9,6 +19,7 @@ export async function render(el) {
       <form id="sf" class="form-grid">
         <label class="field"><span>Betriebsname (Bon/PDF)</span><input name="company_name" value="${esc(s.company_name)}"></label>
         <label class="field"><span>Bestandskontrolle gilt als aktuell für (Tage)</span><input name="check_valid_days" inputmode="numeric" value="${s.check_valid_days}"></label>
+        <label class="field"><span>Fertige Einkaufslisten auf dem Dashboard anzeigen (Tage)</span><input name="finished_list_days" inputmode="numeric" value="${s.finished_list_days}"></label>
         <label class="field"><span>Automatische Abmeldung nach Inaktivität (Stunden)</span><input name="session_hours" inputmode="numeric" value="${s.session_hours}"></label>
         <label class="check"><input type="checkbox" name="auto_backup" ${s.auto_backup ? 'checked' : ''}> Tägliche automatische Datensicherung</label>
         <label class="field"><span>Anzahl aufbewahrter automatischer Sicherungen</span><input name="backup_keep" inputmode="numeric" value="${s.backup_keep}"></label>
@@ -20,6 +31,20 @@ export async function render(el) {
       <p class="muted small">Smartphones und Tablets im selben Netzwerk öffnen eine dieser Adressen im Browser. Beim ersten Start fragt die Windows-Firewall nach einer Freigabe – „Private Netzwerke“ erlauben.</p>
       <button class="btn" id="demo">Beispieldaten laden (nur bei leerer Artikelliste)</button>
     </section>
+    <section class="card span2"><div class="card-head"><h2>✉️ E-Mail-Versand</h2><span class="badge ${s.smtp_host && s.smtp_from ? 'st-green' : 'st-grey'}">${s.smtp_host && s.smtp_from ? 'eingerichtet' : 'nicht eingerichtet'}</span></div>
+      <p class="muted small">Einkaufslisten werden als PDF-Anhang über Ihr eigenes E-Mail-Konto versendet. Bei Gmail und Outlook/Microsoft 365 ist meist ein <b>App-Passwort</b> nötig (in den Kontosicherheits-Einstellungen erstellen).</p>
+      <div class="chips mb">${Object.keys(MAIL_PRESETS).map((k) => `<button type="button" class="chip" data-preset="${k}">${k}</button>`).join('')}</div>
+      <form id="mailf" class="form-grid form-2col">
+        <label class="field"><span>SMTP-Server</span><input name="smtp_host" value="${esc(s.smtp_host)}" placeholder="z. B. smtp.gmail.com" autocapitalize="none"></label>
+        <div class="form-grid form-2col"><label class="field"><span>Port</span><input name="smtp_port" inputmode="numeric" value="${s.smtp_port}"></label>
+          <label class="field"><span>Verschlüsselung</span><select name="smtp_secure"><option value="starttls">STARTTLS (587)</option><option value="ssl">SSL/TLS (465)</option><option value="none">keine (nur LAN)</option></select></label></div>
+        <label class="field"><span>Benutzername (meist die E-Mail-Adresse)</span><input name="smtp_user" value="${esc(s.smtp_user)}" autocapitalize="none" autocomplete="off"></label>
+        <label class="field"><span>Passwort / App-Passwort ${s.smtp_has_password ? '<small class="muted">(gespeichert – leer lassen = unverändert)</small>' : ''}</span><input name="smtp_pass" type="password" autocomplete="new-password"></label>
+        <label class="field"><span>Absenderadresse</span><input name="smtp_from" type="email" value="${esc(s.smtp_from)}" autocapitalize="none"></label>
+        <label class="field"><span>Absendername (optional)</span><input name="smtp_from_name" value="${esc(s.smtp_from_name)}" placeholder="${esc(s.company_name)}"></label>
+        <label class="field span2"><span>Standard-Empfänger (z. B. Küchenchef, Einkauf – mehrere mit Komma)</span><input name="mail_default_to" value="${esc(s.mail_default_to)}" autocapitalize="none"></label>
+        <div class="btn-row span2"><button class="btn btn-primary" type="submit">Speichern</button><button class="btn" type="button" id="mailtest">Test-E-Mail senden</button></div>
+      </form></section>
     <section class="card span2"><div class="card-head"><h2>Datensicherung</h2><div class="btn-row"><button class="btn btn-primary" id="bk">Jetzt sichern</button><label class="btn">Sicherung aus Datei wiederherstellen<input type="file" id="up" accept=".db" hidden></label></div></div>
       <p class="muted small">Ablage: ${esc(s.data_dir)}\\backups – Tipp: Diesen Ordner regelmäßig zusätzlich auf USB-Stick oder Netzlaufwerk kopieren.</p>
       <div id="bks"></div></section></div>`;
@@ -28,9 +53,33 @@ export async function render(el) {
     e.preventDefault();
     const f = e.target;
     try {
-      await put('/api/settings', { company_name: f.company_name.value, check_valid_days: f.check_valid_days.value, session_hours: f.session_hours.value, auto_backup: f.auto_backup.checked, backup_keep: f.backup_keep.value });
+      await put('/api/settings', { company_name: f.company_name.value, check_valid_days: f.check_valid_days.value, session_hours: f.session_hours.value, finished_list_days: f.finished_list_days.value, auto_backup: f.auto_backup.checked, backup_keep: f.backup_keep.value });
       toast('Einstellungen gespeichert.', 'success');
     } catch (err) { toast(err.message, 'error'); }
+  });
+  const mf = el.querySelector('#mailf');
+  mf.smtp_secure.value = s.smtp_secure || 'starttls';
+  el.querySelectorAll('[data-preset]').forEach((b) => b.addEventListener('click', () => {
+    const p = MAIL_PRESETS[b.dataset.preset];
+    mf.smtp_host.value = p.host; mf.smtp_port.value = p.port; mf.smtp_secure.value = p.secure;
+    toast(`${b.dataset.preset}: Server übernommen – Benutzer, Passwort und Absender eintragen.`, 'info');
+  }));
+  const saveMail = async () => {
+    const d = Object.fromEntries(['smtp_host', 'smtp_port', 'smtp_secure', 'smtp_user', 'smtp_pass', 'smtp_from', 'smtp_from_name', 'mail_default_to'].map((k) => [k, mf[k].value.trim()]));
+    await put('/api/settings/mail', d);
+    mf.smtp_pass.value = '';
+  };
+  mf.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try { await saveMail(); toast('E-Mail-Einstellungen gespeichert.', 'success'); } catch (err) { toast(err.message, 'error'); }
+  });
+  el.querySelector('#mailtest').addEventListener('click', async (e) => {
+    const btn = e.target; btn.disabled = true; btn.textContent = 'Sende …';
+    try {
+      await saveMail();
+      const r = await post('/api/settings/mail/test', {});
+      toast(`Test-E-Mail an ${r.to.join(', ')} gesendet – bitte Posteingang prüfen.`, 'success', 6000);
+    } catch (err) { toast(err.message, 'error', 10000); } finally { btn.disabled = false; btn.textContent = 'Test-E-Mail senden'; }
   });
   el.querySelector('#demo').addEventListener('click', async () => {
     try { await post('/api/demo-data'); toast('Beispieldaten geladen.', 'success'); } catch (e) { toast(e.message, 'error'); }

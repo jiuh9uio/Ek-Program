@@ -108,6 +108,15 @@ module.exports = function register(router, { config, log }) {
     auto_backup: db.getSetting('auto_backup', true),
     backup_keep: db.getSetting('backup_keep', 30),
     session_hours: db.getSetting('session_hours', 12),
+    finished_list_days: db.getSetting('finished_list_days', 2),
+    smtp_host: db.getSetting('smtp_host', ''),
+    smtp_port: db.getSetting('smtp_port', 587),
+    smtp_secure: db.getSetting('smtp_secure', 'starttls'),
+    smtp_user: db.getSetting('smtp_user', ''),
+    smtp_has_password: !!db.getSetting('smtp_pass', ''),
+    smtp_from: db.getSetting('smtp_from', ''),
+    smtp_from_name: db.getSetting('smtp_from_name', ''),
+    mail_default_to: db.getSetting('mail_default_to', ''),
     data_dir: config.dataDir,
     db_file: config.dbFile,
     version: require('../version').VERSION,
@@ -122,10 +131,43 @@ module.exports = function register(router, { config, log }) {
       auto_backup: v.bool(body.auto_backup),
       backup_keep: v.num(body.backup_keep, 'backup_keep', { integer: true, min: 3, max: 365, label: 'Anzahl Sicherungen' }),
       session_hours: v.num(body.session_hours, 'session_hours', { integer: true, min: 1, max: 720, label: 'Sitzungsdauer' }),
+      finished_list_days: v.num(body.finished_list_days ?? 2, 'finished_list_days', { integer: true, min: 1, max: 60, label: 'Anzeigedauer fertiger Listen' }),
     };
     for (const [k, val] of Object.entries(s)) db.setSetting(k, val);
     audit(db, user, 'Einstellungen geändert', 'settings', null, diff(before, s, Object.keys(s)));
     return { ok: true };
+  });
+
+  // ---------- E-Mail (SMTP) ----------
+  router.put('/api/settings/mail', { perm: 'system.manage' }, ({ db, user, body }) => {
+    const M = require('../services/mail');
+    const host = v.str(body.smtp_host, 'smtp_host', { max: 200, label: 'SMTP-Server' });
+    if (host && !/^[a-zA-Z0-9.\-]+$/.test(host)) throw unprocessable('SMTP-Server enthält ungültige Zeichen.', { field: 'smtp_host' });
+    const from = v.str(body.smtp_from, 'smtp_from', { max: 200, label: 'Absenderadresse' });
+    if (from && !M.EMAIL_RE.test(from)) throw unprocessable('Absenderadresse ist ungültig.', { field: 'smtp_from' });
+    const s = {
+      smtp_host: host,
+      smtp_port: v.num(body.smtp_port || 587, 'smtp_port', { integer: true, min: 1, max: 65535, label: 'Port' }),
+      smtp_secure: v.oneOf(body.smtp_secure || 'starttls', 'smtp_secure', ['ssl', 'starttls', 'none'], { label: 'Verschlüsselung' }),
+      smtp_user: v.str(body.smtp_user, 'smtp_user', { max: 200, label: 'Benutzer' }),
+      smtp_from: from,
+      smtp_from_name: v.str(body.smtp_from_name, 'smtp_from_name', { max: 120, label: 'Absendername' }),
+      mail_default_to: body.mail_default_to ? M.parseAddresses(body.mail_default_to).join(', ') : '',
+    };
+    for (const [k, val] of Object.entries(s)) db.setSetting(k, val);
+    if (body.smtp_pass) db.setSetting('smtp_pass', String(body.smtp_pass));
+    if (body.clear_pass) db.setSetting('smtp_pass', '');
+    audit(db, user, 'E-Mail-Einstellungen geändert', 'settings', null, { server: s.smtp_host, port: s.smtp_port, absender: s.smtp_from, passwort: body.smtp_pass ? 'geändert' : undefined });
+    return { ok: true };
+  });
+
+  router.post('/api/settings/mail/test', { perm: 'system.manage' }, async ({ db, user, body }) => {
+    const M = require('../services/mail');
+    const cfg = M.mailConfig(db);
+    const to = body.to || cfg.defaultTo || cfg.from;
+    const r = await M.sendMail(cfg, { to, subject: 'EK-Service – Testnachricht', text: 'Der E-Mail-Versand aus EK-Service funktioniert.\n\nViele Grüße\nEK-Service' });
+    audit(db, user, 'Test-E-Mail gesendet', 'settings', null, { an: r.to });
+    return { ok: true, to: r.to };
   });
 
   router.post('/api/demo-data', { perm: 'system.manage' }, ({ db, user }) => {

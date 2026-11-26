@@ -3,6 +3,7 @@ import { get, post } from '../api.js';
 import { esc, fmtQty, fmtEur, fmtDateTime, unitFor, parseNum, toast, confirmDialog, emptyState, download, orderText } from '../ui.js';
 import { navigate } from '../app.js';
 import { newListWizard } from './newlist.js';
+import { shareButtons, bindShare } from './share.js';
 
 export async function render(el, ctx) {
   if (ctx.params[0]) return renderSession(el, ctx, Number(ctx.params[0]));
@@ -40,6 +41,8 @@ function suggest(i, counted) {
 
 async function renderSession(el, { can, setTitle, setActions }, id) {
   let c = await get(`/api/counts/${id}`);
+  let finishedDays = 2;
+  try { finishedDays = (await get('/api/lists-finished', { quiet: true })).days; } catch { /* Standard */ }
   let cur = null;           // aktueller Artikel (Zählposition)
   let entry = '';           // eingegebene Menge (Text)
   let orderOverride = null; // manuell angepasste Bestellmenge
@@ -59,9 +62,9 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
     const s = c.summary;
     const pct = Math.round(((s.counted + s.skipped) / Math.max(1, s.total)) * 100);
     setTitle(`Bestandszählung ${c.number}`);
-    const acts = setActions(`${c.status === 'open' ? `<button class="btn" id="sum">Übersicht</button><button class="btn btn-primary" id="done">Zählung abschließen</button>` : ''}<button class="btn" id="csv">CSV</button>`);
+    const acts = setActions(`${c.status === 'open' ? `<button class="btn" id="sum">Übersicht</button><button class="btn btn-primary" id="done">✓ Fertigstellen</button>` : ''}<button class="btn" id="csv">CSV</button>`);
     acts.querySelector('#sum')?.addEventListener('click', () => select(null));
-    acts.querySelector('#done')?.addEventListener('click', complete);
+    acts.querySelector('#done')?.addEventListener('click', finish);
     acts.querySelector('#csv').addEventListener('click', () => download(`/api/counts/${id}/export.csv`));
     return `<div class="count-head">
       <div class="count-progress"><div class="count-progress-bar" style="width:${pct}%"></div></div>
@@ -137,11 +140,17 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
       <h2>${c.status === 'open' ? (s.open ? 'Zwischenstand' : 'Alle Artikel gezählt 🎉') : 'Zählung abgeschlossen'}</h2>
       <div class="kpis mt"><div><span>Gezählt</span><strong>${s.counted}/${s.total}</strong></div><div><span>Übersprungen</span><strong>${s.skipped}</strong></div>
         <div><span>Offen</span><strong>${s.open}</strong></div><div><span>Auf der Einkaufsliste</span><strong>${s.on_list}</strong></div><div><span>Geschätzt</span><strong>${fmtEur(s.order_value)}</strong></div></div>
-      <div class="btn-row mt">
-        <a class="btn btn-primary btn-lg" href="#/lists/${c.list_id}">🛒 Einkaufsliste ${esc(c.list_number || '')} öffnen</a>
-        ${c.status === 'open' && rest.length ? '<button class="btn btn-lg" id="cont">Offene/übersprungene weiterzählen</button>' : ''}
-        ${c.status === 'open' ? '<button class="btn btn-lg" id="fin">Zählung abschließen</button>' : ''}
-      </div>
+      ${c.status === 'open' ? `<div class="btn-row mt">
+        <button class="btn btn-primary btn-xl" id="fin">✓ Fertigstellen</button>
+        ${rest.length ? '<button class="btn btn-lg" id="cont">Offene/übersprungene weiterzählen</button>' : ''}
+        <a class="btn btn-lg" href="#/lists/${c.list_id}">🛒 Einkaufsliste ${esc(c.list_number || '')} ansehen</a>
+      </div>` : `<div class="done-box mt">
+        ${s.on_list ? `<p class="done-title">✅ Einkaufsliste <b>${esc(c.list_number || '')}</b> ist fertig – ${s.on_list} Position${s.on_list === 1 ? '' : 'en'}, ca. ${fmtEur(s.order_value)}</p>
+        <p class="muted">Sie steht ${finishedDays} Tag${finishedDays === 1 ? '' : 'e'} lang oben auf dem Dashboard und bleibt dauerhaft unter „Einkaufslisten“ gespeichert.</p>
+        ${shareButtons(c.list_id)}
+        <div class="btn-row mt"><a class="btn" href="#/lists/${c.list_id}">Einkaufsliste öffnen / bearbeiten</a><a class="btn" href="#/dashboard">Zum Dashboard</a></div>`
+    : `<p class="done-title">👍 Alles gezählt – es muss nichts nachgekauft werden.</p><div class="btn-row"><a class="btn" href="#/dashboard">Zum Dashboard</a></div>`}
+      </div>`}
       ${c.status === 'open' && rest.length ? '<p class="muted small">Nicht gezählte Artikel bleiben „nicht kontrolliert“ – sie werden nicht als Bestand 0 gewertet.</p>' : ''}
     </section>
     <div class="grid-2 mt">
@@ -182,10 +191,15 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
     } catch (e) { toast(e.message, 'error'); }
   }
 
-  async function complete() {
+  async function finish() {
     const s = c.summary;
-    if (!(await confirmDialog(`Zählung abschließen?${s.open + s.skipped ? ` ${s.open + s.skipped} Artikel wurden nicht gezählt und bleiben „nicht kontrolliert“.` : ''} Die Einkaufsliste ${c.list_number} bleibt als Entwurf zum Drucken/Bestellen erhalten.`, { ok: 'Abschließen' }))) return;
-    try { c = await post(`/api/counts/${id}/complete`); toast('Zählung abgeschlossen.', 'success'); select(null); } catch (e) { toast(e.message, 'error'); }
+    const rest = s.open + s.skipped;
+    if (rest && !(await confirmDialog(`${rest} Artikel wurden nicht gezählt und bleiben „nicht kontrolliert“. Trotzdem fertigstellen?`, { ok: '✓ Fertigstellen' }))) return;
+    try {
+      c = await post(`/api/counts/${id}/finish`);
+      toast(c.summary.on_list ? `Einkaufsliste ${c.list_number} ist fertig.` : 'Zählung abgeschlossen – nichts nachzukaufen.', 'success');
+      select(null);
+    } catch (e) { toast(e.message, 'error'); }
   }
 
   function bindResult() {
@@ -200,7 +214,8 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
     el.querySelector('#toggle-list')?.addEventListener('click', () => { showList = !showList; draw(); });
     el.querySelectorAll('[data-jump]').forEach((r) => r.addEventListener('click', () => select(c.items.find((x) => x.id === Number(r.dataset.jump)))));
     el.querySelector('#cont')?.addEventListener('click', () => { const r = c.items.find((i) => i.state !== 'counted'); select(r); });
-    el.querySelector('#fin')?.addEventListener('click', complete);
+    el.querySelector('#fin')?.addEventListener('click', finish);
+    bindShare(el, { onDone: () => {} });
     const inp = el.querySelector('#cnt');
     if (inp) {
       inp.addEventListener('input', () => { entry = inp.value; orderOverride = null; refreshResult(); });

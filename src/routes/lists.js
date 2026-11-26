@@ -5,6 +5,8 @@ const L = require('../services/lists');
 const P = require('../services/printing');
 const { listPdf } = require('../print/pdf');
 const { audit } = require('../services/audit');
+const M = require('../services/mail');
+const { fmtDate } = require('../print/receipt');
 
 module.exports = function register(router) {
   router.get('/api/lists', {}, ({ db, query }) => {
@@ -31,6 +33,23 @@ module.exports = function register(router) {
       LEFT JOIN purchase_items pi ON pi.list_id = pl.id LEFT JOIN suppliers s ON s.id = pi.supplier_id
       WHERE ${where.join(' AND ')} GROUP BY pl.id ORDER BY pl.id DESC LIMIT ${limit}`, ...params)
       .map((l) => ({ ...l, status_label: L.STATUS_LABELS[l.status] }));
+  });
+
+  // Fertiggestellte Listen der letzten Tage (Schnellzugriff)
+  router.get('/api/lists-finished', {}, ({ db }) => {
+    const days = Number(db.getSetting('finished_list_days', 2)) || 2;
+    const since = new Date(Date.now() - days * 86400e3).toISOString();
+    return {
+      days,
+      lists: db.all(`SELECT pl.id, pl.number, pl.title, pl.status, pl.ready_at, u.display_name AS created_by_name,
+          COUNT(pi.id) AS positions, COALESCE(SUM(pi.qty * pi.unit_price_est), 0) AS est_total, GROUP_CONCAT(DISTINCT s.name) AS suppliers,
+          (SELECT COUNT(*) FROM print_jobs pj WHERE pj.list_id = pl.id AND pj.status = 'ok') AS print_count,
+          (SELECT COUNT(*) FROM list_events le WHERE le.list_id = pl.id AND le.action = 'E-Mail versendet') AS mail_count
+        FROM purchase_lists pl LEFT JOIN users u ON u.id = pl.created_by LEFT JOIN purchase_items pi ON pi.list_id = pl.id
+        LEFT JOIN suppliers s ON s.id = pi.supplier_id
+        WHERE pl.department = 'service' AND pl.ready_at >= ? AND pl.status <> 'cancelled'
+        GROUP BY pl.id ORDER BY pl.ready_at DESC`, since).map((l) => ({ ...l, status_label: L.STATUS_LABELS[l.status] })),
+    };
   });
 
   router.post('/api/lists', { perm: 'list.create' }, ({ db, user, body }) => {
@@ -125,6 +144,42 @@ module.exports = function register(router) {
     });
     L.logEvent(db, list.id, user, 'PDF exportiert');
     return new RawResponse(buf, 'application/pdf', `Einkaufsliste_${list.number}.pdf`, query.inline === '1');
+  });
+
+  // ---------- E-Mail ----------
+  router.get('/api/lists/:id/email-defaults', { perm: 'print' }, ({ db, params }) => {
+    const list = L.loadList(db, Number(params.id));
+    const cfg = M.mailConfig(db);
+    const company = db.getSetting('company_name', '');
+    const supplierMails = list.supplier_groups.filter((g) => g.supplier_id).map((g) => {
+      const s = db.get('SELECT name, email, customer_no FROM suppliers WHERE id = ?', g.supplier_id);
+      return { name: s.name, email: s.email, customer_no: s.customer_no };
+    }).filter((s) => s.email);
+    const lines = list.items.map((i) => {
+      const upo = Number(i.units_per_order) || 1;
+      const q = upo > 1 && i.order_unit_name ? `${Math.round((i.qty / upo) * 1000) / 1000} ${i.order_unit_plural || i.order_unit_name}` : `${i.qty} ${i.unit_plural || i.unit_name || ''}`;
+      return `- ${i.article_name}: ${String(q).replace('.', ',').trim()}`;
+    });
+    return {
+      configured: !!(cfg.host && cfg.from),
+      default_to: cfg.defaultTo,
+      suppliers: supplierMails,
+      subject: `Einkaufsliste ${list.number}${list.title ? ' – ' + list.title : ''}${company ? ' – ' + company : ''}`,
+      message: `Hallo,\n\nanbei die Einkaufsliste ${list.number} vom ${fmtDate(new Date(list.ready_at || list.created_at))} (${list.items.length} Positionen) als PDF.\n\n${lines.join('\n')}\n\nViele Grüße\n${company}`.trim(),
+    };
+  });
+
+  router.post('/api/lists/:id/email', { perm: 'print' }, async ({ db, user, body, params }) => {
+    const list = L.loadList(db, Number(params.id));
+    if (!list.items.length) throw unprocessable('Die Liste enthält keine Positionen.');
+    const cfg = M.mailConfig(db);
+    const pdf = listPdf(list, { company: db.getSetting('company_name', ''), groupBy: ['supplier', 'category', 'location'].includes(body.group) ? body.group : 'supplier', userName: user.display_name, showPrices: body.prices !== false });
+    const subject = v.str(body.subject, 'subject', { required: true, max: 200, label: 'Betreff' });
+    const text = v.str(body.message, 'message', { max: 20000, label: 'Nachricht' });
+    const r = await M.sendMail(cfg, { to: body.to, cc: body.cc, subject, text, attachments: [{ filename: `Einkaufsliste_${list.number}.pdf`, content: pdf, contentType: 'application/pdf' }] });
+    L.logEvent(db, list.id, user, 'E-Mail versendet', { an: [...r.to, ...r.cc].join(', ') });
+    audit(db, user, 'Einkaufsliste per E-Mail versendet', 'list', list.id, { nummer: list.number, an: r.to, cc: r.cc });
+    return { ok: true, ...r };
   });
 
   // ---------- Druck ----------

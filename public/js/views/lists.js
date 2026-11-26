@@ -3,6 +3,7 @@ import { get, post, put, del } from '../api.js';
 import { orderText, esc, fmtQty, fmtEur, fmtDateTime, unitFor, parseNum, listBadge, LIST_STATUS, toast, modal, confirmDialog, debounce, matches, options, emptyState, download } from '../ui.js';
 import { navigate } from '../app.js';
 import { newListWizard } from './newlist.js';
+import { printBonDialog, pdfOptionsDialog, printA4, emailDialog } from './share.js';
 
 export async function render(el, ctx) {
   if (ctx.params[0]) return renderDetail(el, ctx, Number(ctx.params[0]));
@@ -67,14 +68,14 @@ async function renderDetail(el, { can, setTitle, setActions }, id) {
   function renderActions() {
     const s = list.status;
     const b = [];
-    if (s === 'draft' && can('list.create')) b.push(['ready', 'Einkaufsbereit', 'btn-primary']);
+    if (s === 'draft' && can('list.create')) b.push(['ready', '✓ Fertigstellen', 'btn-primary']);
     if (['draft', 'ready'].includes(s) && can('orders.approve')) b.push(['ordered', 'Freigeben & bestellt', 'btn-primary']);
     if (s === 'ready' && can('list.create')) b.push(['draft', 'Zurück zu Entwurf', '']);
     if (['ready', 'ordered', 'partial', 'delivered'].includes(s) && can('goods.receive')) b.push(['receive', 'Wareneingang', 'btn-primary']);
     if (['ready', 'ordered', 'partial', 'delivered'].includes(s) && can('orders.approve')) b.push(['closed', 'Abschließen', s === 'delivered' ? 'btn-primary' : '']);
     if (s === 'closed' && can('orders.approve')) b.push(['reopen', 'Erneut öffnen', '']);
     if (s === 'cancelled' && can('orders.approve')) b.push(['draft', 'Wiederherstellen', '']);
-    if (can('print') && list.items.length) { b.push(['print', '⎙ Bon drucken', '']); b.push(['pdf', 'PDF', '']); }
+    if (can('print') && list.items.length) { b.push(['pdf', '📄 PDF', '']); b.push(['a4', '🖨️ A4', '']); b.push(['print', '🧾 Bon', '']); b.push(['mail', '✉️ E-Mail', '']); }
     if (['draft', 'ready'].includes(s) && can('list.create')) b.push(['cancelled', 'Stornieren', 'btn-danger-ghost']);
     else if (['ordered', 'partial'].includes(s) && can('orders.approve')) b.push(['cancelled', 'Stornieren', 'btn-danger-ghost']);
     const a = setActions(b.map(([k, l, c]) => `<button class="btn ${c}" data-a="${k}">${l}</button>`).join(''));
@@ -85,11 +86,13 @@ async function renderDetail(el, { can, setTitle, setActions }, id) {
 
   async function onAction(a) {
     try {
-      if (a === 'print') return printDialog();
-      if (a === 'pdf') return pdfDialog();
+      if (a === 'print') return printBonDialog(id, { onDone: () => reload() });
+      if (a === 'pdf') return pdfOptionsDialog(id);
+      if (a === 'a4') return printA4(id);
+      if (a === 'mail') return emailDialog(id, { onDone: () => reload() });
       if (a === 'receive') return receiveDialog();
       if (a === 'closed') return closeDialog();
-      const labels = { ready: 'Liste als einkaufsbereit markieren?', ordered: 'Bestellung freigeben und als bestellt markieren?', draft: 'Liste wieder als Entwurf öffnen?', reopen: 'Abgeschlossene Liste erneut öffnen?', cancelled: 'Liste wirklich stornieren? Die Mengen gelten dann nicht mehr als bestellt.' };
+      const labels = { ready: 'Liste fertigstellen? Sie ist dann einkaufsbereit und kann gedruckt oder per E-Mail versendet werden.', ordered: 'Bestellung freigeben und als bestellt markieren?', draft: 'Liste wieder als Entwurf öffnen?', reopen: 'Abgeschlossene Liste erneut öffnen?', cancelled: 'Liste wirklich stornieren? Die Mengen gelten dann nicht mehr als bestellt.' };
       if (!(await confirmDialog(labels[a], { danger: a === 'cancelled', ok: a === 'cancelled' ? 'Stornieren' : 'Bestätigen' }))) return;
       const r = await post(`/api/lists/${id}/status`, { status: a });
       r.warnings.forEach((w) => toast(w, 'warn', 7000));
@@ -368,67 +371,6 @@ async function renderDetail(el, { can, setTitle, setActions }, id) {
           r.warnings.forEach((w) => toast(w, 'warn', 6000));
           toast('Liste abgeschlossen.', 'success'); reload(r.list);
         },
-      }],
-    });
-  }
-
-  function printDialog() {
-    if (!printers.length) {
-      toast('Kein Bondrucker eingerichtet.' + (can('printers.manage') ? ' Bitte unter „Drucker“ anlegen.' : ' Bitte Administrator informieren.'), 'error');
-      return;
-    }
-    const prefs = JSON.parse(localStorage.getItem('ek.print.prefs') || '{"group_by":"category","per_supplier":false,"only_open":false,"show_prices":false}');
-    const m = modal({
-      title: 'Einkaufsbon drucken', wide: true,
-      body: `<div class="print-grid"><form id="pf" class="form-grid">
-        <label class="field"><span>Drucker</span><select name="printer_id">${printers.filter((p) => p.active).map((p) => `<option value="${p.id}" ${p.is_default ? 'selected' : ''}>${esc(p.name)}${p.is_default ? ' (Standard)' : ''}</option>`).join('')}</select></label>
-        <label class="field"><span>Gruppierung auf dem Bon</span><select name="group_by"><option value="category">nach Kategorie</option><option value="location">nach Lagerort</option><option value="supplier">nach Lieferant</option></select></label>
-        <label class="check"><input type="checkbox" name="per_supplier"> Separaten Bon je Lieferant drucken</label>
-        <label class="check"><input type="checkbox" name="only_open"> Nur offene (nicht eingekaufte/gelieferte) Positionen</label>
-        <label class="check"><input type="checkbox" name="show_prices"> Geschätzte Preise drucken</label>
-        <div class="muted small" id="pstatus"></div>
-      </form><pre class="bon-preview" id="pv">Vorschau …</pre></div>`,
-      actions: [{ label: 'Abbrechen' }, {
-        label: '⎙ Drucken', cls: 'btn-primary', onClick: async (mm) => {
-          const body = opts(mm);
-          localStorage.setItem('ek.print.prefs', JSON.stringify(body));
-          const r = await post(`/api/lists/${id}/print`, body);
-          const errs = r.results.filter((x) => x.status === 'error');
-          if (errs.length) { toast(`Druckfehler: ${errs[0].error}`, 'error', 9000); reload(); return false; }
-          toast(`${r.results.length} Bon(s) an ${r.results[0].printer} gesendet.`, 'success');
-          reload();
-        },
-      }],
-    });
-    const f = m.body.querySelector('#pf');
-    f.group_by.value = prefs.group_by; f.per_supplier.checked = prefs.per_supplier; f.only_open.checked = prefs.only_open; f.show_prices.checked = prefs.show_prices;
-    const opts = (mm) => { const ff = mm.body.querySelector('#pf'); return { printer_id: Number(ff.printer_id.value), group_by: ff.group_by.value, per_supplier: ff.per_supplier.checked, only_open: ff.only_open.checked, show_prices: ff.show_prices.checked }; };
-    const preview = async () => {
-      try {
-        const r = await post(`/api/lists/${id}/preview`, opts(m), { quiet: true });
-        m.body.querySelector('#pv').textContent = r.bons.map((b) => b.text).join('\n\n✂ - - - - - - - - - - - - - - - - - - - - - - -\n\n');
-        m.body.querySelector('#pv').style.setProperty('--cols', r.width);
-      } catch (e) { m.body.querySelector('#pv').textContent = e.message; }
-    };
-    const status = async () => {
-      const ps = m.body.querySelector('#pstatus');
-      ps.textContent = 'Druckerstatus wird abgefragt …';
-      try { const s = await get(`/api/printers/${f.printer_id.value}/status`, { quiet: true }); ps.innerHTML = `${s.online ? '🟢' : '🔴'} ${esc(s.message)}`; } catch (e) { ps.textContent = e.message; }
-    };
-    f.addEventListener('change', (e) => { preview(); if (e.target.name === 'printer_id') status(); });
-    preview(); status();
-  }
-
-  function pdfDialog() {
-    modal({
-      title: 'PDF exportieren',
-      body: `<form id="pdff" class="form-grid">
-        <label class="field"><span>Gruppierung</span><select name="group"><option value="supplier">nach Lieferant</option><option value="category">nach Kategorie</option><option value="location">nach Lagerort</option></select></label>
-        <label class="check"><input type="checkbox" name="prices" checked> Preise und Summen anzeigen</label></form>`,
-      actions: [{ label: 'Abbrechen' }, {
-        label: 'Öffnen', onClick: (m) => { const f = m.body.querySelector('#pdff'); window.open(`/api/lists/${id}/pdf?group=${f.group.value}&prices=${f.prices.checked ? 1 : 0}&inline=1`, '_blank'); },
-      }, {
-        label: 'Herunterladen', cls: 'btn-primary', onClick: (m) => { const f = m.body.querySelector('#pdff'); download(`/api/lists/${id}/pdf?group=${f.group.value}&prices=${f.prices.checked ? 1 : 0}`); },
       }],
     });
   }

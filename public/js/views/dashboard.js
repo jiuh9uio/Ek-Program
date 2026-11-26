@@ -3,6 +3,7 @@ import { get } from '../api.js';
 import { esc, fmtQty, fmtEur, fmtDateTime, fmtAgo, unitFor, listBadge, statusBadge, emptyState } from '../ui.js';
 import { navigate } from '../app.js';
 import { newListWizard } from './newlist.js';
+import { shareButtons, bindShare } from './share.js';
 
 const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 
@@ -13,7 +14,7 @@ export async function render(el, { can, setActions }) {
   act.querySelector('#new-list')?.addEventListener('click', newListWizard);
 
   const draw = async () => {
-    const d = await get(`/api/dashboard?period=${period}`);
+    const [d, fin] = await Promise.all([get(`/api/dashboard?period=${period}`), get('/api/lists-finished').catch(() => ({ lists: [], days: 2 }))]);
     const c = d.counts;
     const kpi = (label, value, cls, href, sub = '') => `<a class="kpi ${cls}" ${href ? `href="${href}"` : ''}><span>${label}</span><strong>${value}</strong>${sub ? `<small>${sub}</small>` : ''}</a>`;
     const artRow = (a) => `<li><span class="grow"><strong>${esc(a.name)}</strong><br><small class="muted">${esc(a.location_name || '')} · Ist ${a.current_stock === null ? '–' : fmtQty(a.current_stock)} / MIN ${fmtQty(a.min_stock)} / MAX ${fmtQty(a.max_stock)}</small></span>
@@ -24,7 +25,12 @@ export async function render(el, { can, setActions }) {
       return `<ul class="bars">${rows.map((r) => `<li><span class="bar-label">${esc(r[labelKey])}</span><span class="bar-track"><span class="bar-fill" style="width:${Math.max(1, (r.value / max) * 100).toFixed(1)}%"></span></span><span class="bar-val">${fmtEur(r.value)}</span></li>`).join('')}</ul>`;
     };
 
-    el.innerHTML = `
+    const finished = fin.lists.length ? `<section class="card finished-card"><div class="card-head"><h2>✅ Fertige Einkaufslisten <small class="muted">(letzte ${fin.days} Tag${fin.days === 1 ? '' : 'e'})</small></h2></div>
+      ${fin.lists.map((l) => `<div class="finished-row">
+        <a class="finished-info" href="#/lists/${l.id}"><strong>${esc(l.number)}</strong> ${listBadge(l.status)} <span>${esc(l.title || '')}</span>
+          <small class="muted">${fmtDateTime(l.ready_at)} · ${l.positions} Pos. · ${fmtEur(l.est_total)}${l.print_count ? ` · ${l.print_count}× gedruckt` : ''}${l.mail_count ? ` · ${l.mail_count}× gemailt` : ''}</small></a>
+        ${shareButtons(l.id, { big: false })}</div>`).join('')}</section>` : '';
+    el.innerHTML = `${finished}
       <div class="kpi-grid">
         ${kpi('Unter Mindestbestand', c.below, c.below ? 'kpi-red' : 'kpi-ok', '#/articles', 'sofort nachbestellen')}
         ${kpi('Am Mindestbestand', c.at_min, c.at_min ? 'kpi-yellow' : 'kpi-ok', '#/articles')}
@@ -58,6 +64,7 @@ export async function render(el, { can, setActions }) {
         <section class="card"><h2>Überbestände (über MAX)</h2>${d.stats.overstock.length ? `<ul class="art-list">${d.stats.overstock.map((a) => `<li><span class="grow">${esc(a.name)}<br><small class="muted">Ist ${fmtQty(a.current_stock)} / MAX ${fmtQty(a.max_stock)}</small></span><span class="pill">${fmtEur(a.excess_value)} gebunden</span></li>`).join('')}</ul>` : emptyState('Keine Überbestände – gut für die Kapitalbindung.', '👍')}</section>
       </div>` : ''}`;
     el.querySelector('#nl2')?.addEventListener('click', newListWizard);
+    bindShare(el, { onDone: () => draw() });
     el.querySelectorAll('[data-p]').forEach((b) => b.addEventListener('click', () => { period = Number(b.dataset.p); sessionStorage.setItem('ek.dash.period', period); draw(); }));
   };
 

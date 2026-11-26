@@ -178,6 +178,22 @@ function completeCount(db, user, countId) {
   });
 }
 
+/** Zählung abschließen und Einkaufsliste fertigstellen (Status "Einkaufsbereit"). */
+function finishCount(db, user, can, countId) {
+  return db.transaction(() => {
+    const c = getCountRow(db, countId);
+    if (c.status === 'open') completeCount(db, user, countId);
+    let listStatus = null;
+    if (c.list_id) {
+      const list = db.get('SELECT * FROM purchase_lists WHERE id = ?', c.list_id);
+      const n = db.get('SELECT COUNT(*) AS n FROM purchase_items WHERE list_id = ?', c.list_id).n;
+      if (list.status === 'draft' && n > 0) L.changeStatus(db, user, can, c.list_id, 'ready', { note: `Fertiggestellt nach Zählung ${c.number}` });
+      listStatus = db.get('SELECT status FROM purchase_lists WHERE id = ?', c.list_id).status;
+    }
+    return { ...loadCount(db, countId), list_status: listStatus };
+  });
+}
+
 function listCounts(db, department = 'service') {
   return db.all(`SELECT sc.id, sc.number, sc.status, sc.created_at, sc.completed_at, sc.list_id, pl.number AS list_number, pl.status AS list_status,
       u.display_name AS created_by_name,
@@ -188,4 +204,4 @@ function listCounts(db, department = 'service') {
     LEFT JOIN users u ON u.id = sc.created_by WHERE sc.department = ? GROUP BY sc.id ORDER BY sc.id DESC LIMIT 200`, department);
 }
 
-module.exports = { createCount, loadCount, recordItem, completeCount, listCounts };
+module.exports = { createCount, loadCount, recordItem, completeCount, finishCount, listCounts };
