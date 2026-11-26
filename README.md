@@ -10,9 +10,11 @@ Läuft als **einzelne Windows-Datei `EK-Service.exe`**, z. B. auf einem Dell-Rug
 ## Schnellstart auf dem Dell Rugged (Windows 10/11, 64 Bit)
 
 1. `EK-Service.exe` in einen eigenen Ordner kopieren, z. B. `C:\EK-Service\` (nicht nach *Programme*).
-2. Doppelklick auf `EK-Service.exe`.
-   - Ein Konsolenfenster zeigt den Status. **Dieses Fenster geöffnet lassen.**
-   - Die Oberfläche öffnet sich automatisch als randloses Edge-App-Fenster.
+2. Doppelklick auf `EK-Service.exe`. Das Programmfenster öffnet sich, wie bei jedem normalen Windows-Programm.
+   - Es gibt kein Konsolenfenster und keine Adressleiste; das Fenster ist getrennt vom normalen Browser.
+   - Beim ersten Start werden **Verknüpfungen auf dem Desktop und im Startmenü** angelegt. Danach einfach darüber starten.
+   - **Fenster schließen = Programm beendet.** Zählt gerade noch ein Handy im WLAN mit, läuft EK-Service weiter, bis auch dort geschlossen wird.
+   - Erneuter Doppelklick, während das Programm läuft, öffnet nur das Fenster wieder; es startet keine zweite Kopie.
    - Windows SmartScreen meldet beim ersten Start eventuell „Unbekannter Herausgeber“, weil die Datei nicht signiert ist. Dann *Weitere Informationen → Trotzdem ausführen* wählen.
    - Die Windows-Firewall fragt nach einer Freigabe. **„Private Netzwerke“** erlauben, damit Smartphones im WLAN zugreifen können.
 3. Anmelden mit **Benutzer `admin`, Passwort `admin`**. Danach das Passwort sofort ändern (unten links auf den Namen tippen).
@@ -24,18 +26,22 @@ Alle Daten liegen im Ordner `ek-data` neben der EXE:
 - `ek-service.db`: Datenbank
 - `backups\`: automatische Sicherungen
 - `config.json`: Port und Startverhalten
+- `logs\ek-service.log`: Protokoll für die Fehlersuche (ersetzt das frühere Konsolenfenster)
 
 Ist der Ordner neben der EXE nicht beschreibbar, wird stattdessen `%LOCALAPPDATA%\EK-Service` verwendet.
 
-**Autostart (optional):** Mit `Win+R` → `shell:startup` den Autostart-Ordner öffnen und dort eine Verknüpfung zur EXE ablegen.
+**Autostart (optional):** Mit `Win+R` → `shell:startup` den Autostart-Ordner öffnen und die Desktop-Verknüpfung dort hineinkopieren.
 
 **Smartphones/Tablets im WLAN:** Unter *System → Zugriff* stehen die Adressen, z. B. `http://192.168.1.20:8080`. Diese Adresse im Browser öffnen und „Zum Startbildschirm hinzufügen“ wählen. Gedruckt wird immer über den EK-Service-Rechner, deshalb funktioniert der Druck auch vom Handy aus.
 
 `config.json`:
 ```json
-{ "port": 8080, "host": "0.0.0.0", "openBrowser": true, "appWindow": true }
+{ "port": 8080, "host": "0.0.0.0", "openBrowser": true, "appWindow": true, "autoShutdown": true, "createShortcuts": true }
 ```
-`"host": "127.0.0.1"` sperrt den Zugriff aus dem Netzwerk. Startparameter: `--port 9000`, `--no-browser`.
+
+- `"host": "127.0.0.1"` sperrt den Zugriff aus dem Netzwerk.
+- `"autoShutdown": false` lässt EK-Service nach dem Schließen des Fensters weiterlaufen (z. B. als Dauer-Server für Handys).
+- Startparameter: `--port 9000`, `--no-browser`, `--server` (ohne automatisches Beenden).
 
 ---
 
@@ -218,7 +224,7 @@ scripts/build-exe.js   EXE-Erstellung
 npm install
 npm start                 # http://localhost:8080
 npm test                  # 54 Tests: Berechnungen, Bestandsbuchungen, Rechte, Druck (simulierte Drucker), PDF, Sicherung
-npm run build:exe         # → dist/EK-Service.exe (Windows x64, mit Programmsymbol; baubar unter Windows/Linux/macOS)
+npm run build:exe         # → dist/EK-Service.exe (Windows x64, Fensterprogramm mit Symbol; --console für Konsolenversion; baubar unter Windows/Linux/macOS)
 node scripts/make-icon.js # Programmsymbol assets/icon.ico aus assets/icon.svg neu erzeugen (benötigt Playwright)
 ```
 

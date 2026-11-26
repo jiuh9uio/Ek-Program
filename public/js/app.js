@@ -197,4 +197,7 @@ function setActions(html) {
 
 export function navigate(path) { if (location.hash === '#' + path) route(); else location.hash = path; }
 
+// Offenes Fenster melden: Schließt man alle Fenster, beendet sich EK-Service automatisch
+try { new EventSource('/api/presence'); } catch { /* ältere Browser */ }
+
 boot();

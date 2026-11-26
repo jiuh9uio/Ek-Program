@@ -1,37 +1,18 @@
 'use strict';
 /**
- * Einstiegspunkt der EK-Service-Anwendung (auch für die Windows-EXE).
- * Startet den lokalen Server (inkl. Druckdienst) und öffnet die Oberfläche.
+ * Einstiegspunkt der EK-Service-Anwendung (Windows-EXE).
+ * Verhält sich wie ein normales Programm: Doppelklick öffnet das Programmfenster,
+ * Schließen des Fensters beendet das Programm. Der interne Dienst (Datenbank, Druck,
+ * E-Mail, WLAN-Zugriff) läuft unsichtbar im Hintergrund.
  */
-const { execFile, spawn } = require('node:child_process');
+const fs = require('node:fs');
+const path = require('node:path');
 const { loadConfig } = require('./config');
-const { createApp } = require('./app');
-const { startScheduler } = require('./services/backup');
-const { lanUrls } = require('./routes/system');
 const { VERSION } = require('./version');
+const desktop = require('./desktop');
 
-function findEdge() {
-  const fs = require('node:fs');
-  const path = require('node:path');
-  const roots = [process.env['ProgramFiles(x86)'], process.env.ProgramFiles, process.env.LOCALAPPDATA].filter(Boolean);
-  for (const r of roots) {
-    const p = path.join(r, 'Microsoft', 'Edge', 'Application', 'msedge.exe');
-    if (fs.existsSync(p)) return p;
-  }
-  return null;
-}
-
-function openUi(url, appWindow) {
-  try {
-    if (process.platform === 'win32') {
-      // Bevorzugt Edge im App-Modus (randloses Fenster, touchfreundlich), sonst Standardbrowser
-      const edge = appWindow ? findEdge() : null;
-      if (edge) spawn(edge, [`--app=${url}`, '--start-maximized'], { detached: true, stdio: 'ignore' }).unref();
-      else spawn('cmd.exe', ['/c', 'start', '', url], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
-    } else if (process.platform === 'darwin') execFile('open', [url], () => {});
-    else execFile('xdg-open', [url], () => {});
-  } catch { /* Browser konnte nicht geöffnet werden – URL steht in der Konsole */ }
-}
+const IDLE_AFTER_CLOSE_MS = 15000;   // Fenster zu → nach 15 s beenden (Neuladen/Seitenwechsel überbrücken)
+const IDLE_BEFORE_OPEN_MS = 120000;  // Start ohne Fenster (z. B. Edge fehlt) → nach 2 Min. beenden
 
 function listen(server, port, host, attempts = 10) {
   return new Promise((resolve, reject) => {
@@ -46,49 +27,91 @@ function listen(server, port, host, attempts = 10) {
   });
 }
 
+async function alreadyRunning(runFile, port) {
+  const ports = [port];
+  try { const r = JSON.parse(fs.readFileSync(runFile, 'utf8')); if (r.port) ports.unshift(r.port); } catch { /* keine Datei */ }
+  for (const p of [...new Set(ports)]) {
+    try {
+      const r = await fetch(`http://127.0.0.1:${p}/api/health`, { signal: AbortSignal.timeout(800) });
+      if (r.ok && (await r.json()).ok) return p;
+    } catch { /* läuft nicht */ }
+  }
+  return null;
+}
+
 async function main() {
   if (process.platform === 'win32') process.title = `EK-Service ${VERSION}`;
   const config = loadConfig();
-  console.log(`EK-Service ${VERSION} – Einkaufs- und Bestandsmanagement Service`);
-  console.log(`Daten: ${config.dataDir}`);
+  const desktopMode = config.isSea && process.platform === 'win32';
+  if (desktopMode || process.env.EK_LOG_FILE === '1') desktop.setupFileLog(config.dataDir);
+  console.log(`EK-Service ${VERSION} startet – Daten: ${config.dataDir}`);
+
+  // Läuft das Programm schon? Dann nur das Fenster (erneut) öffnen.
+  const runFile = path.join(config.dataDir, 'laeuft.json');
+  const running = await alreadyRunning(runFile, config.port);
+  if (running) {
+    console.log(`EK-Service läuft bereits auf Port ${running} – öffne Fenster.`);
+    if (config.openBrowser) desktop.openAppWindow(`http://localhost:${running}`, { dataDir: config.dataDir, appWindow: config.appWindow });
+    setTimeout(() => process.exit(0), 1500);
+    return;
+  }
+
+  const { createApp } = require('./app');
+  const { startScheduler } = require('./services/backup');
+  const { lanUrls } = require('./routes/system');
   const { db, server } = createApp(config);
-
-  // Bereits laufende Instanz? Dann nur die Oberfläche öffnen.
-  try {
-    const r = await fetch(`http://127.0.0.1:${config.port}/api/health`, { signal: AbortSignal.timeout(800) });
-    if (r.ok && (await r.json()).ok) {
-      console.log('EK-Service läuft bereits – öffne Oberfläche.');
-      if (config.openBrowser) openUi(`http://localhost:${config.port}`, config.appWindow);
-      setTimeout(() => process.exit(0), 1500);
-      return;
-    }
-  } catch { /* läuft nicht */ }
-
   const port = await listen(server, config.port, config.host);
   config.port = port;
+  fs.writeFileSync(runFile, JSON.stringify({ pid: process.pid, port, started: new Date().toISOString() }));
   startScheduler(db, config.backupDir);
   const local = `http://localhost:${port}`;
-  console.log('');
-  console.log(`Bereit:  ${local}`);
-  for (const u of lanUrls(port)) console.log(`Im WLAN: ${u}   (Smartphones/Tablets)`);
-  console.log('');
-  console.log('Dieses Fenster geöffnet lassen. Beenden mit Strg+C.');
-  if (config.openBrowser) openUi(local, config.appWindow);
+  console.log(`Bereit: ${local} | WLAN: ${lanUrls(port).join(', ') || '–'}`);
 
-  const shutdown = () => {
-    console.log('Beende EK-Service …');
+  let stopping = false;
+  const shutdown = (reason) => {
+    if (stopping) return;
+    stopping = true;
+    console.log(`EK-Service wird beendet (${reason}).`);
+    try { fs.rmSync(runFile, { force: true }); } catch { /* egal */ }
     server.close();
     try { db.close(); } catch { /* bereits geschlossen */ }
-    process.exit(0);
+    setTimeout(() => process.exit(0), 300);
   };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', () => shutdown('Strg+C'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('uncaughtException', (e) => console.error('[Fehler]', e));
   process.on('unhandledRejection', (e) => console.error('[Fehler]', e));
+
+  if (config.openBrowser) {
+    desktop.openAppWindow(local, { dataDir: config.dataDir, appWindow: config.appWindow });
+    // Programm beendet sich, sobald kein Fenster mehr offen ist (auch keine Handys/Tablets im WLAN)
+    if (config.autoShutdown) startIdleWatch();
+  } else if (process.argv.includes('--auto-shutdown')) startIdleWatch(); // für automatische Tests
+
+  function startIdleWatch() {
+    {
+      setInterval(() => {
+        const p = server.presence;
+        const idle = Date.now() - p.lastActive;
+        if (p.count === 0 && idle > (p.seen ? IDLE_AFTER_CLOSE_MS : IDLE_BEFORE_OPEN_MS)) shutdown('alle Fenster geschlossen');
+      }, 3000).unref();
+    }
+  }
+
+  // Beim ersten Start: Verknüpfungen auf Desktop und im Startmenü
+  const marker = path.join(config.dataDir, '.verknuepfungen');
+  if (desktopMode && config.createShortcuts && !fs.existsSync(marker)) {
+    desktop.ensureShortcuts(process.execPath).then((ok) => {
+      if (ok) fs.writeFileSync(marker, new Date().toISOString());
+      console.log(ok ? 'Verknüpfungen auf Desktop und im Startmenü angelegt.' : 'Verknüpfungen konnten nicht angelegt werden.');
+    });
+  }
 }
 
-main().catch((e) => {
+main().catch(async (e) => {
   console.error('Start fehlgeschlagen:', e);
-  if (process.platform === 'win32') setTimeout(() => process.exit(1), 30000); // Fenster offen lassen zum Lesen
-  else process.exit(1);
+  const hint = e && e.code === 'EADDRINUSE' ? '\n\nDer Netzwerk-Port ist belegt. Bitte den Rechner neu starten oder in ek-data\\config.json einen anderen Port eintragen.'
+    : e && /SQLITE_BUSY|database is locked/i.test(String(e.message)) ? '\n\nDie Datenbank wird gerade von einem anderen Programm verwendet.' : '';
+  await desktop.messageBox(`EK-Service konnte nicht gestartet werden.\n\n${e && e.message ? e.message : e}${hint}`);
+  process.exit(1);
 });

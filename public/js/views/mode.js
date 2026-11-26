@@ -334,6 +334,10 @@ export async function render(el, { can, setActions }) {
     } catch { /* offline – später erneut */ }
   }, 60000);
 
+  // Fenster wird geschlossen → ausstehende Eingaben sofort senden
+  const onHide = () => [...stockSavers.values(), ...qtySavers.values()].forEach((d) => d.flush());
+  window.addEventListener('pagehide', onHide);
+
   // Scanner: zum gescannten Artikel springen und Eingabefeld fokussieren
   const popScan = pushScanHandler(async (code) => {
     const art = await resolveCode(code);
@@ -357,6 +361,7 @@ export async function render(el, { can, setActions }) {
   return {
     destroy() {
       popScan();
+      window.removeEventListener('pagehide', onHide);
       clearInterval(refresh);
       // ausstehende Eingaben sofort speichern
       [...stockSavers.values(), ...qtySavers.values()].forEach((d) => d.flush());

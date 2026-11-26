@@ -17,6 +17,7 @@ function busy(delta) {
 
 export async function api(method, url, body, { raw = false, quiet = false } = {}) {
   const opts = { method, headers: { 'X-EK-Client': '1' }, credentials: 'same-origin' };
+  if (method !== 'GET' && body !== undefined && !(body instanceof Blob) && !(body instanceof ArrayBuffer) && JSON.stringify(body).length < 60000) opts.keepalive = true;
   if (body !== undefined) {
     if (body instanceof Blob || body instanceof ArrayBuffer) { opts.body = body; opts.headers['Content-Type'] = 'application/octet-stream'; } else { opts.body = JSON.stringify(body); opts.headers['Content-Type'] = 'application/json'; }
   }

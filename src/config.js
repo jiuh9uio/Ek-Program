@@ -40,7 +40,7 @@ function loadConfig(argv = process.argv.slice(2)) {
       console.error('config.json ist ungültig und wird ignoriert:', e.message);
     }
   } else {
-    fileCfg = { port: 8080, host: '0.0.0.0', openBrowser: true, appWindow: true };
+    fileCfg = { port: 8080, host: '0.0.0.0', openBrowser: true, appWindow: true, autoShutdown: true, createShortcuts: true };
     fs.writeFileSync(cfgFile, JSON.stringify(fileCfg, null, 2));
   }
   const arg = (name) => argv.includes(name);
@@ -54,6 +54,9 @@ function loadConfig(argv = process.argv.slice(2)) {
     host: argVal('--host') || process.env.EK_HOST || fileCfg.host || '0.0.0.0',
     openBrowser: !arg('--no-browser') && fileCfg.openBrowser !== false && process.env.EK_NO_BROWSER !== '1',
     appWindow: fileCfg.appWindow !== false,
+    // Programm beendet sich, wenn alle Fenster geschlossen sind (wie ein normales Windows-Programm)
+    autoShutdown: fileCfg.autoShutdown !== false && !arg('--server'),
+    createShortcuts: fileCfg.createShortcuts !== false,
   };
 }
 

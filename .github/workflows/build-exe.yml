@@ -43,6 +43,36 @@ jobs:
           if (-not (Test-Path "$env:RUNNER_TEMP\ek-data\ek-service.db")) { throw 'Datenbankdatei fehlt' }
           Stop-Process -Id $p.Id
           Write-Host 'EXE-Prüfung erfolgreich.'
+      - name: Verhalten wie ein normales Programm prüfen
+        shell: pwsh
+        run: |
+          # 1) Fensterprogramm: PE-Subsystem muss GUI (2) sein → kein Konsolenfenster
+          $b = [System.IO.File]::ReadAllBytes("dist\EK-Service.exe")
+          $pe = [BitConverter]::ToInt32($b, 0x3C)
+          $sub = [BitConverter]::ToUInt16($b, $pe + 24 + 68)
+          if ($sub -ne 2) { throw "Subsystem ist $sub statt 2 (GUI)" }
+          Write-Host "Subsystem: GUI (kein Konsolenfenster)"
+          # 3) Zweiter Start + automatisches Beenden, wenn das Fenster geschlossen wird
+          $env:EK_DATA_DIR = "$env:RUNNER_TEMP\ek-data2"
+          $p = Start-Process -FilePath "dist\EK-Service.exe" -ArgumentList '--no-browser','--auto-shutdown','--port','18121' -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 30 -and -not $ok; $i++) { Start-Sleep 1; try { $ok = (Invoke-RestMethod http://127.0.0.1:18121/api/health).ok } catch {} }
+          if (-not $ok) { throw 'Start fehlgeschlagen' }
+          # 2) Desktop-Verknüpfung wird beim ersten Start angelegt
+          $lnk = Join-Path ([Environment]::GetFolderPath('Desktop')) 'EK-Service.lnk'
+          for ($i = 0; $i -lt 30 -and -not (Test-Path $lnk); $i++) { Start-Sleep 1 }
+          if (-not (Test-Path $lnk)) { throw 'Desktop-Verknüpfung fehlt' }
+          $t = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk).TargetPath
+          Write-Host "Verknüpfung: $lnk -> $t"
+          $second = Start-Process -FilePath "dist\EK-Service.exe" -ArgumentList '--no-browser','--port','18121' -PassThru
+          if (-not $second.WaitForExit(15000)) { throw 'Zweite Instanz beendet sich nicht' }
+          Write-Host "Zweiter Start: keine zweite Kopie (Exit $($second.ExitCode))"
+          # Fenster simulieren: Verbindung 5 s offen, dann schließen
+          try { Invoke-WebRequest http://127.0.0.1:18121/api/presence -TimeoutSec 5 -UseBasicParsing | Out-Null } catch {}
+          if (-not $p.WaitForExit(45000)) { Stop-Process -Id $p.Id; throw 'Programm hat sich nach dem Schließen nicht beendet' }
+          if (Test-Path "$env:EK_DATA_DIR\laeuft.json") { throw 'Laufzeitdatei wurde nicht aufgeräumt' }
+          Get-Content "$env:EK_DATA_DIR\logs\ek-service.log"
+          Write-Host 'Programmverhalten OK.'
       - uses: actions/upload-artifact@v4
         with:
           name: EK-Service-Windows

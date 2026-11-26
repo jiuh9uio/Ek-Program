@@ -107,6 +107,21 @@ function setWindowsIconAndVersion(file) {
   log(`Programmsymbol (${icon.icons.length} Größen) und Versionsinfo ${pkg.version} gesetzt.`);
 }
 
+/** PE-Subsystem auf GUI (2) setzen: kein Konsolenfenster beim Start (wie ein normales Windows-Programm). */
+function setGuiSubsystem(file) {
+  const fd = fs.openSync(file, 'r+');
+  try {
+    const head = Buffer.alloc(4096);
+    fs.readSync(fd, head, 0, head.length, 0);
+    const peOff = head.readUInt32LE(0x3C);
+    if (head.toString('latin1', peOff, peOff + 4) !== 'PE\0\0') throw new Error('Keine PE-Datei');
+    const subOff = peOff + 24 + 68; // Optional Header → Subsystem (PE32 und PE32+ gleich)
+    const b = Buffer.alloc(2); b.writeUInt16LE(2, 0);
+    fs.writeSync(fd, b, 0, 2, subOff);
+  } finally { fs.closeSync(fd); }
+  log('Fensterprogramm (ohne Konsolenfenster).');
+}
+
 function listFiles(dir, base = dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     const full = path.join(dir, e.name);
@@ -153,6 +168,7 @@ async function main() {
   await inject(out, 'NODE_SEA_BLOB', fs.readFileSync(seaConfig.output), { sentinelFuse: FUSE });
   // Symbol erst nach der Injektion setzen (resedit übernimmt alle Ressourcen inkl. NODE_SEA_BLOB)
   if (target.startsWith('win')) setWindowsIconAndVersion(out);
+  if (target.startsWith('win') && !args.includes('--console')) setGuiSubsystem(out);
   const mb = (fs.statSync(out).size / 1024 / 1024).toFixed(1);
   log(`Fertig: ${path.relative(ROOT, out)} (${mb} MB, Node ${nodeVersion})`);
 }

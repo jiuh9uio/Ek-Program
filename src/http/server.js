@@ -73,9 +73,21 @@ function send(res, status, body, headers = {}, req) {
 function createServer({ db, router, isSea, log = console }) {
   const asset = createAssetLoader(isSea);
 
-  return http.createServer(async (req, res) => {
+  // Offene Programmfenster (für automatisches Beenden, wenn alle Fenster geschlossen sind)
+  const presence = { count: 0, lastActive: Date.now(), seen: false };
+
+  const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     const pathname = url.pathname;
+
+    if (pathname === '/api/presence' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
+      res.write('retry: 2000\n\n');
+      presence.count++; presence.seen = true; presence.lastActive = Date.now();
+      const ping = setInterval(() => res.write(': ping\n\n'), 20000);
+      req.on('close', () => { clearInterval(ping); presence.count--; presence.lastActive = Date.now(); });
+      return;
+    }
     const security = {
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
@@ -160,6 +172,8 @@ function createServer({ db, router, isSea, log = console }) {
     const type = MIME[path.extname(rel)] || 'application/octet-stream';
     send(res, 200, buf, { ...security, 'Content-Type': type, 'Cache-Control': rel === 'index.html' ? 'no-cache' : 'no-cache' }, req);
   });
+  server.presence = presence;
+  return server;
 }
 
 module.exports = { createServer };
