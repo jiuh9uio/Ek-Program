@@ -4,6 +4,9 @@ import { esc, fmtQty, fmtEur, fmtDateTime, unitFor, parseNum, toast, confirmDial
 import { navigate } from '../app.js';
 import { newListWizard } from './newlist.js';
 import { shareButtons, bindShare } from './share.js';
+import { pushScanHandler } from '../scanner.js';
+import { resolveCode } from './scanhelp.js';
+import { matches } from '../ui.js';
 import { sound, haptic, pop, floatText, confetti, celebrate, checkAchievements } from '../reward.js';
 
 const MILESTONES = [[25, '🚀', 'Ein Viertel geschafft!'], [50, '💪', 'Halbzeit!'], [75, '🏁', 'Endspurt – drei Viertel geschafft!']];
@@ -66,7 +69,10 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
   const coarse = window.matchMedia('(pointer: coarse)').matches;
 
   const firstOpen = (afterSeq = 0) => c.items.find((i) => i.state === 'open' && i.seq > afterSeq) || c.items.find((i) => i.state === 'open') || null;
-  const select = (item) => {
+  let resumeId = null;   // Artikel, bei dem die normale Reihenfolge nach einem Scan weitergeht
+  let scannedId = null;
+  const select = (item, { keepResume = false } = {}) => {
+    if (!keepResume) { resumeId = null; scannedId = null; }
     cur = item; orderOverride = null;
     entry = item && item.counted_qty !== null ? fmtQty(item.counted_qty) : '';
     summary = !item;
@@ -86,6 +92,7 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
       <div class="count-stats"><span><b>${s.counted}</b>/${s.total} gezählt</span>${s.skipped ? `<span>${s.skipped} übersprungen</span>` : ''}
         <span>🛒 <b>${s.on_list}</b> auf <a href="#/lists/${c.list_id}">${esc(c.list_number || '')}</a> · ca. ${fmtEur(s.order_value)}</span>
         ${c.status !== 'open' ? '<span class="badge st-green">abgeschlossen</span>' : ''}
+        ${c.status === 'open' ? '<input id="jump-q" class="input-sm jump-q" placeholder="📷 Scannen oder Code/Name …" autocomplete="off">' : ''}
         <button class="btn btn-sm" id="toggle-list">${showList ? 'Zählliste ausblenden' : '☰ Zählliste'}</button></div></div>`;
   }
 
@@ -109,6 +116,7 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
     const idx = c.items.indexOf(i) + 1;
     const ro = c.status !== 'open';
     return `<section class="count-card">
+      ${scannedId === i.id ? `<div class="scan-banner">📷 Gescannt${resumeId && c.items.find((x) => x.id === resumeId) ? ` – danach geht es weiter mit <b>${esc(c.items.find((x) => x.id === resumeId).name)}</b> <button type="button" class="link-btn" id="scan-back">jetzt zurück</button>` : ''}</div>` : ''}
       <div class="count-where">📍 ${esc(i.location_name || 'Ohne Lagerort')} <span class="muted">· Artikel ${idx} von ${c.items.length}</span></div>
       <div class="count-art">
         ${i.has_image ? `<img src="/api/articles/${i.article_id}/image" alt="">` : ''}
@@ -229,7 +237,10 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
       if (body.counted_qty !== undefined) rewardCount(before, wasCounted);
       else if (body.skip) sound.soft();
       const updated = c.items.find((x) => x.id === cur.id);
-      if (advance) select(firstOpen(updated.seq));
+      if (advance) {
+        const resume = resumeId ? c.items.find((x) => x.id === resumeId && x.state === 'open') : null;
+        select(resume || firstOpen(updated.seq));
+      }
       else { cur = updated; draw(); }
     } catch (e) { toast(e.message, 'error'); }
   }
@@ -257,9 +268,42 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
     ord.addEventListener('change', () => { if (cur.state === 'counted' && orderOverride !== null && parseNum(entry) === cur.counted_qty) save({ order_qty: orderOverride }, false); });
   }
 
+  /** Zum Artikel springen; bei Scan merken, wo die normale Reihenfolge weitergeht. */
+  function jumpTo(item, fromScan) {
+    const keep = resumeId;
+    const resume = fromScan && !summary && cur && cur.state === 'open' && cur.id !== item.id ? (keep || cur.id) : keep;
+    select(item, { keepResume: true });
+    resumeId = fromScan ? resume : null;
+    scannedId = fromScan ? item.id : null;
+    draw();
+    if (fromScan) { sound.pop(); haptic(20); pop(el.querySelector('.count-card')); }
+  }
+
+  async function onScan(code) {
+    if (c.status !== 'open') { toast('Die Zählung ist bereits abgeschlossen.', 'info'); return; }
+    const art = await resolveCode(code, { preferIds: c.items.map((i) => i.article_id) });
+    if (!art) return;
+    let item = c.items.find((i) => i.article_id === art.id);
+    if (!item) {
+      if (!(await confirmDialog(`„${art.name}“ ist nicht in dieser Zählung. Jetzt hinzufügen und zählen?`, { ok: 'Hinzufügen' }))) return;
+      try { c = await post(`/api/counts/${id}/add-article`, { article_id: art.id }); } catch (e) { toast(e.message, 'error'); return; }
+      item = c.items.find((i) => i.id === c.added_item_id);
+    }
+    jumpTo(item, true);
+  }
+
   function bind() {
+    const jq = el.querySelector('#jump-q');
+    jq?.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || !jq.value.trim()) return;
+      e.preventDefault();
+      const q = jq.value.trim(); jq.value = '';
+      const hit = c.items.find((i) => matches(`${i.name} ${i.article_no}`, q));
+      if (hit) jumpTo(hit, true); else onScan(q);
+    });
     el.querySelector('#toggle-list')?.addEventListener('click', () => { showList = !showList; draw(); });
     el.querySelectorAll('[data-jump]').forEach((r) => r.addEventListener('click', () => select(c.items.find((x) => x.id === Number(r.dataset.jump)))));
+    el.querySelector('#scan-back')?.addEventListener('click', () => select(c.items.find((x) => x.id === resumeId)));
     el.querySelector('#cont')?.addEventListener('click', () => { const r = c.items.find((i) => i.state !== 'counted'); select(r); });
     el.querySelector('#fin')?.addEventListener('click', finish);
     bindShare(el, { onDone: () => {} });
@@ -306,5 +350,7 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
     });
   }
 
+  const popScan = pushScanHandler(onScan);
   draw();
+  return { destroy() { popScan(); } };
 }

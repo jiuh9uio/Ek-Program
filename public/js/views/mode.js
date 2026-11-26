@@ -1,6 +1,8 @@
 // Schneller Einkaufsmodus: Schnellauswahl & Bestandskontrolle (touchoptimiert, automatische Speicherung).
 import { get, post } from '../api.js';
 import { sound, haptic, pop } from '../reward.js';
+import { pushScanHandler } from '../scanner.js';
+import { resolveCode } from './scanhelp.js';
 import { orderText, esc, fmtQty, fmtAgo, unitFor, parseNum, statusBadge, toast, debounce, matches, promptDialog, emptyState } from '../ui.js';
 import { navigate } from '../app.js';
 
@@ -67,7 +69,7 @@ export async function render(el, { can, setActions }) {
       : [0, a.supplier_name || 'Ohne Lieferant'];
 
   const visible = (a) => {
-    if (search && !matches(`${a.name} ${a.article_no} ${a.manufacturer || ''} ${a.supplier_name || ''} ${a.location_name || ''} ${a.category_name || ''}`, search)) return false;
+    if (search && !matches(`${(a.codes || []).join(' ')} ${a.name} ${a.article_no} ${a.manufacturer || ''} ${a.supplier_name || ''} ${a.location_name || ''} ${a.category_name || ''}`, search)) return false;
     if (prefs.filter === 'need') return a.recommended > 0 || a.item || ['below', 'at_min'].includes(a.status);
     if (prefs.filter === 'unchecked') return !a.stock_fresh && a.check_result !== 'ok' || a.current_stock === null && a.check_result !== 'ok';
     if (prefs.filter === 'onlist') return !!a.item;
@@ -332,8 +334,29 @@ export async function render(el, { can, setActions }) {
     } catch { /* offline – später erneut */ }
   }, 60000);
 
+  // Scanner: zum gescannten Artikel springen und Eingabefeld fokussieren
+  const popScan = pushScanHandler(async (code) => {
+    const art = await resolveCode(code);
+    if (!art) return;
+    const a = data.articles.find((x) => x.id === art.id);
+    if (!a) { toast(`„${art.name}“ ist inaktiv oder archiviert.`, 'warn'); return; }
+    if (!visible(a)) {
+      search = ''; el.querySelector('#mode-search').value = '';
+      prefs.filter = 'all'; el.querySelectorAll('[data-filter]').forEach((x) => x.classList.toggle('on', x.dataset.filter === 'all'));
+      renderList();
+    }
+    const card = listEl.querySelector(`.mcard[data-id="${a.id}"]`);
+    if (!card) return;
+    card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    card.classList.remove('scan-hit'); void card.offsetWidth; card.classList.add('scan-hit');
+    sound.pop(); haptic(20);
+    const f = card.querySelector(prefs.mode === 'count' ? '[data-field="stock"]' : '[data-field="qty"]');
+    if (f) setTimeout(() => { f.focus(); f.select(); }, 350);
+  });
+
   return {
     destroy() {
+      popScan();
       clearInterval(refresh);
       // ausstehende Eingaben sofort speichern
       [...stockSavers.values(), ...qtySavers.values()].forEach((d) => d.flush());

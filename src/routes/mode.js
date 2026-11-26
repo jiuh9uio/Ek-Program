@@ -26,6 +26,7 @@ function decorate(db, a, draftId, itemsByArticle) {
     status: a.status,
     recommended: a.recommended, on_order: a.on_order, open_lists: a.open_lists, stock_fresh: a.stock_fresh,
     allowed_max: Number.isFinite(allowed) ? allowed : null,
+    codes: a.codes || [],
     item: item ? { id: item.id, qty: item.qty, note: item.note, source: item.source } : null,
   };
 }

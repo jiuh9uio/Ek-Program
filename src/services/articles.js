@@ -30,12 +30,17 @@ function loadArticles(db, { department = 'service', includeArchived = false, inc
   }
   const rows = db.all(`${ARTICLE_SELECT} WHERE ${where.join(' AND ')} ORDER BY a.sort_order, a.name COLLATE NOCASE`, ...params);
   const open = openQuantities(db, { department, excludeListId });
+  const codeMap = new Map();
+  for (const c of db.all('SELECT article_id, code FROM article_codes ORDER BY id')) {
+    if (!codeMap.has(c.article_id)) codeMap.set(c.article_id, []);
+    codeMap.get(c.article_id).push(c.code);
+  }
   const validDays = Number(db.getSetting('check_valid_days', 7)) || 7;
   const now = Date.now();
   return rows.map((a) => {
     const oq = open.get(a.id);
     const ev = evaluate(a, oq ? oq.qty : 0, validDays, now);
-    const out = { ...a, ...ev, open_lists: oq ? oq.lists : [], has_image: !!a.image };
+    const out = { ...a, ...ev, open_lists: oq ? oq.lists : [], has_image: !!a.image, codes: codeMap.get(a.id) || [] };
     if (!withImage) delete out.image;
     return out;
   });

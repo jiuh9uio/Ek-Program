@@ -214,6 +214,29 @@ function fitDoc(doc, W) {
   return out;
 }
 
+/** Barcode-Bytes: Code128 (Zeichensatz B), bei langen/nicht-ASCII-Codes QR-Code. */
+function escposBarcode(code, width) {
+  const ascii = /^[\x20-\x7e]+$/.test(code);
+  const dots = width >= 48 ? 576 : 384;
+  const modules = 11 * (code.length + 3) + 13;
+  const out = [0x1B, 0x61, 1]; // zentriert
+  if (ascii && modules <= dots) {
+    const w = modules * 2 <= dots ? 2 : 1;
+    const data = [0x7B, 0x42, ...Buffer.from(code, 'latin1')]; // "{B" + Daten
+    out.push(0x1D, 0x68, 80, 0x1D, 0x77, w, 0x1D, 0x48, 2, 0x1D, 0x66, 0, 0x1D, 0x6B, 73, data.length, ...data, 0x0A);
+  } else {
+    const data = [...Buffer.from(code, 'utf8')];
+    const len = data.length + 3;
+    out.push(0x1D, 0x28, 0x6B, 4, 0, 49, 65, 50, 0); // Modell 2
+    out.push(0x1D, 0x28, 0x6B, 3, 0, 49, 67, 6); // Modulgröße
+    out.push(0x1D, 0x28, 0x6B, 3, 0, 49, 69, 48); // Fehlerkorrektur L
+    out.push(0x1D, 0x28, 0x6B, len & 0xff, len >> 8, 49, 80, 48, ...data);
+    out.push(0x1D, 0x28, 0x6B, 3, 0, 49, 81, 48, 0x0A);
+    out.push(...encodeText(code, 'cp858'), 0x0A);
+  }
+  return out;
+}
+
 /** ESC/POS-Bytefolge erzeugen. */
 function toEscPos(doc, { width = 48, codepage = 'cp858', cut = true, feedLines = 4 } = {}) {
   const cp = CODEPAGES[codepage] || CODEPAGES.cp858;
@@ -224,6 +247,7 @@ function toEscPos(doc, { width = 48, codepage = 'cp858', cut = true, feedLines =
   for (const l of fitDoc(doc, width)) {
     if (l.feed) { bytes.push(0x1B, 0x64, Math.min(255, l.feed)); continue; }
     if (l.cut) { bytes.push(0x1D, 0x56, 0x42, 0x00); continue; }
+    if (l.barcode) { bytes.push(...escposBarcode(l.barcode, width)); curAlign = 1; continue; }
     const a = ALIGN[l.align] ?? 0; const b = l.bold ? 1 : 0; const s = SIZE[l.size] ?? 0;
     if (a !== curAlign) { bytes.push(0x1B, 0x61, a); curAlign = a; }
     if (b !== curBold) { bytes.push(0x1B, 0x45, b); curBold = b; }
@@ -244,6 +268,12 @@ function toEposXml(doc, { width = 48, cut = true } = {}) {
   for (const l of fitDoc(doc, width)) {
     if (l.feed) { parts.push(`<feed line="${l.feed}"/>`); continue; }
     if (l.cut) { parts.push('<cut type="feed"/>'); continue; }
+    if (l.barcode) {
+      parts.push('<text align="center"/>');
+      if (/^[\x20-\x7e]+$/.test(l.barcode) && l.barcode.length <= 30) parts.push(`<barcode type="code128" hri="below" font="font_a" width="2" height="80">${xmlEsc('{B' + l.barcode)}</barcode><feed/>`);
+      else parts.push(`<symbol type="qrcode_model_2" level="level_l" width="6">${xmlEsc(l.barcode)}</symbol><feed/><text>${xmlEsc(l.barcode)}&#10;</text>`);
+      continue;
+    }
     const dw = l.size === 'double'; const dh = l.size === 'double' || l.size === 'tall';
     parts.push(`<text align="${l.align}"/><text dw="${dw}" dh="${dh}" em="${!!l.bold}"/><text>${xmlEsc(l.text)}&#10;</text>`);
   }
@@ -256,7 +286,7 @@ function toEposXml(doc, { width = 48, cut = true } = {}) {
 
 /** Textvorschau (so wie der Bon aussieht). */
 function toText(doc, width = 48) {
-  return fitDoc(doc, width).filter((l) => l.text !== undefined).map((l) => {
+  return fitDoc(doc, width).map((l) => (l.barcode ? { text: `║▌║█║▌▌║█  ${l.barcode}  ║▌█║▌║▌║`, align: 'center' } : l)).filter((l) => l.text !== undefined).map((l) => {
     let t = l.text;
     if (l.size === 'double') t = t.split('').join(' ');
     if (l.align === 'center') t = ' '.repeat(Math.max(0, Math.floor((width - t.length) / 2))) + t;

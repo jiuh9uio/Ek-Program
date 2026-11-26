@@ -81,6 +81,33 @@ Spalten werden über ihren Namen erkannt, z. B. *Artikel/Bezeichnung*, *MIN/Mind
 
 Pro Artikel lassen sich eine **Bestelleinheit** und ihr **Inhalt** hinterlegen, z. B. *Karton à 6 Flaschen*. Gezählt wird weiter in Flaschen. Vorgeschlagen werden aber immer ganze Kartons: *„Nachkaufen: 2 Kartons (= 12 Flaschen)“*. Mit −/+ änderst du die Menge kartonweise oder trägst sie selbst ein. Bon und PDF drucken „2 Kartons“, darunter „= 12 Flaschen“.
 
+## Barcodes, QR-Codes & Etiketten
+
+**Codes je Artikel:** Im Artikel (Artikel → antippen → „🏷️ Barcodes / QR-Codes“) lassen sich beliebig viele Codes hinterlegen. Beispiele:
+
+- EAN der Flasche, EAN des Kartons
+- eigener Etiketten-Code: „Eigenen Code erzeugen“ ergibt z. B. `EK000007`
+
+Einfach in das Feld scannen oder eintippen. Ein Code gehört immer genau zu einem Artikel; die Artikelnummer funktioniert zusätzlich als Code. Bei EAN-Codes wird die Prüfziffer kontrolliert. Codes lassen sich auch über *Tabelle einfügen* importieren (Spalte *EAN*, *Barcode* oder *Code*).
+
+**Scanner:** Jeder Barcode- oder QR-Scanner im Tastatur-Modus funktioniert: USB, Bluetooth oder eingebaut wie beim Dell Rugged. Das Programm erkennt einen Scan am Tempo, ein Eingabefeld muss dafür nicht angeklickt sein.
+
+- **Bestandszählung:** Der Scan springt sofort zum Artikel (Hinweis „📷 Gescannt – danach geht es weiter mit …“).
+  - Nach **„Speichern & weiter“** setzt die Zählung dort fort, wo die normale Reihenfolge stand.
+  - Ist der Artikel nicht Teil der Zählung, wird er auf Wunsch hinzugefügt.
+  - Ohne Scanner: Code oder Namen ins Feld „📷 Scannen oder Code/Name“ tippen.
+- **Einkaufsmodus:** Der Scan springt zur Artikelkarte, das Eingabefeld ist sofort bereit.
+- **Artikel:** Der Scan öffnet den Artikel. Ein unbekannter Code bietet „Neuen Artikel anlegen“ oder „Vorhandenem Artikel zuordnen“.
+- **Unbekannte Codes** können Administratoren direkt beim Scannen einem Artikel zuordnen; ab dann werden sie erkannt.
+
+**Etiketten drucken:** *Artikel → „🏷️ Etiketten“* oder direkt im Artikel.
+
+- A4-Bögen 3 × 8 (Avery Zweckform L7159) oder 2 × 7 (L7163). Bereits benutzte Etiketten auf angebrochenen Bögen lassen sich überspringen.
+- Oder einzeln auf den Bondrucker, mit Schnitt nach jedem Etikett.
+- Artikel ohne Code bekommen automatisch einen eigenen Code.
+- Gedruckt wird ein Code-128-Barcode, den Barcode- und QR-Scanner lesen. Sehr lange Codes druckt der Bondrucker als QR-Code.
+- Im Druckdialog „Ränder: Keine / 100 %“ wählen.
+
 ## Belohnungen & angenehme Bedienung
 
 - **Sofort-Feedback:** sanfte Töne, kurze Vibration auf Handy/Tablet, kleine Animationen beim Zählen, Abhaken, Speichern, Drucken und Mailen.
@@ -190,7 +217,7 @@ scripts/build-exe.js   EXE-Erstellung
 ```bash
 npm install
 npm start                 # http://localhost:8080
-npm test                  # 49 Tests: Berechnungen, Bestandsbuchungen, Rechte, Druck (simulierte Drucker), PDF, Sicherung
+npm test                  # 54 Tests: Berechnungen, Bestandsbuchungen, Rechte, Druck (simulierte Drucker), PDF, Sicherung
 npm run build:exe         # → dist/EK-Service.exe (Windows x64, mit Programmsymbol; baubar unter Windows/Linux/macOS)
 node scripts/make-icon.js # Programmsymbol assets/icon.ico aus assets/icon.svg neu erzeugen (benötigt Playwright)
 ```

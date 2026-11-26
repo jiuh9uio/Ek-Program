@@ -1,0 +1,18 @@
+@page { size: A4 portrait; margin: 0; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; background: #e5e7eb; color: #111; }
+.bar { position: sticky; top: 0; z-index: 2; display: flex; gap: 10px; align-items: center; padding: 10px 16px; background: #16263a; color: #fff; }
+.bar span { flex: 1; }
+.bar button { font: inherit; font-weight: 600; min-height: 44px; padding: 8px 18px; border-radius: 8px; border: 0; cursor: pointer; }
+#btn-print { background: #1d4ed8; color: #fff; }
+.hint { text-align: center; color: #555; font-size: 13px; }
+.sheet { position: relative; width: 210mm; height: 297mm; background: #fff; margin: 12px auto; box-shadow: 0 4px 20px rgba(0,0,0,.15); page-break-after: always; overflow: hidden; }
+.label { position: absolute; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 2mm 3mm; text-align: center; overflow: hidden; }
+.label.empty { outline: 1px dashed #ddd; }
+.label .name { font-weight: 800; line-height: 1.1; max-height: 2.3em; overflow: hidden; }
+.label .sub { color: #444; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.label .barcode { width: 100%; }
+.l3x8 .name { font-size: 9pt; } .l3x8 .sub { font-size: 6.5pt; } .l3x8 .barcode { height: 15mm; }
+.l2x7 .name { font-size: 12pt; } .l2x7 .sub { font-size: 8pt; } .l2x7 .barcode { height: 17mm; }
+@media screen { .label { outline: 1px dashed #cbd5e1; } }
+@media print { body { background: #fff; } .noprint { display: none !important; } .sheet { margin: 0; box-shadow: none; } .label.empty { outline: 0; } }

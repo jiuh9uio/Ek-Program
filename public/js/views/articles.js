@@ -1,18 +1,23 @@
 // Artikelverwaltung: anlegen, bearbeiten, duplizieren, archivieren, sortieren, CSV, Bilder.
 import { get, post, put, del } from '../api.js';
+import { pushScanHandler } from '../scanner.js';
+import { assignCodeDialog } from './scanhelp.js';
+import { svg as barcodeSvg } from '../code128.js';
 import { esc, fmtQty, fmtEur, fmtDateTime, statusBadge, STATUS, toast, modal, confirmDialog, debounce, matches, options, parseNum, emptyState, download, formData } from '../ui.js';
 
 export async function render(el, { can, setActions }) {
   const [cats, sups, locs, units] = await Promise.all([get('/api/categories'), get('/api/suppliers'), get('/api/locations'), get('/api/units')]);
   let arts = [];
+  let lastRows = [];
   const f = JSON.parse(sessionStorage.getItem('ek.art.filter') || '{"q":"","cat":"","sup":"","loc":"","status":"","view":"active","sort":"name","dir":1}');
   const saveF = () => sessionStorage.setItem('ek.art.filter', JSON.stringify(f));
 
-  const acts = setActions(`${can('articles.manage') ? '<button class="btn" id="csv-exp">CSV-Export</button><button class="btn" id="csv-imp">CSV-Import</button><button class="btn" id="paste-imp">📋 Tabelle einfügen (MIN/MAX)</button><button class="btn btn-primary" id="new-art">+ Neuer Artikel</button>' : ''}`);
+  const acts = setActions(`${can('articles.manage') ? '<button class="btn" id="csv-exp">CSV-Export</button><button class="btn" id="csv-imp">CSV-Import</button><button class="btn" id="paste-imp">📋 Tabelle einfügen (MIN/MAX)</button><button class="btn" id="labels">🏷️ Etiketten</button><button class="btn btn-primary" id="new-art">+ Neuer Artikel</button>' : ''}`);
   acts.querySelector('#new-art')?.addEventListener('click', () => editDialog(null));
   acts.querySelector('#csv-exp')?.addEventListener('click', () => download('/api/articles/export.csv'));
   acts.querySelector('#csv-imp')?.addEventListener('click', importDialog);
   acts.querySelector('#paste-imp')?.addEventListener('click', () => pasteDialog(sups, load));
+  acts.querySelector('#labels')?.addEventListener('click', () => labelsDialog(lastRows.map((a) => a.id), lastRows.filter((a) => !a.codes.length).map((a) => a.id)));
 
   el.innerHTML = `
     <div class="toolbar toolbar-wrap">
@@ -42,7 +47,7 @@ export async function render(el, { can, setActions }) {
   function draw() {
     let rows = arts.filter((a) => (f.view === 'inactive' ? !a.active : f.view === 'active' ? a.active : true));
     rows = rows.filter((a) => (!f.cat || String(a.category_id) === f.cat) && (!f.sup || String(a.supplier_id) === f.sup) && (!f.loc || String(a.location_id) === f.loc) && (!f.status || a.status === f.status));
-    if (f.q) rows = rows.filter((a) => matches(`${a.name} ${a.article_no} ${a.manufacturer || ''} ${a.notes || ''} ${a.pack_size || ''}`, f.q));
+    if (f.q) rows = rows.filter((a) => matches(`${a.name} ${a.article_no} ${a.manufacturer || ''} ${a.notes || ''} ${a.pack_size || ''} ${a.codes.join(' ')}`, f.q));
     rows.sort((a, b) => {
       const x = a[f.sort]; const y = b[f.sort];
       if (x === y) return a.name.localeCompare(b.name, 'de');
@@ -50,13 +55,14 @@ export async function render(el, { can, setActions }) {
       if (y === null || y === undefined) return -1;
       return (typeof x === 'number' ? x - y : String(x).localeCompare(String(y), 'de')) * f.dir;
     });
+    lastRows = rows;
     if (!rows.length) { tbl.innerHTML = emptyState(arts.length ? 'Kein Artikel entspricht dem Filter.' : 'Noch keine Artikel vorhanden.'); return; }
     const manual = f.sort === 'sort_order' && can('articles.manage') && !f.q && !f.cat && !f.sup && !f.loc && !f.status;
     tbl.innerHTML = `<div class="muted small">${rows.length} Artikel${manual ? ' · Reihenfolge mit ▲▼ ändern (wirkt im Einkaufsmodus)' : ' · Spaltenkopf antippen zum Sortieren'}</div>
       <div class="table-wrap"><table class="table table-click"><thead><tr>${COLS.map(([k, l]) => `<th data-sort="${k}" class="${['min_stock', 'max_stock', 'current_stock', 'recommended', 'price_net'].includes(k) ? 'num' : ''} sortable">${l}${f.sort === k ? (f.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('')}<th></th></tr></thead>
       <tbody>${rows.map((a) => `<tr data-id="${a.id}" class="${a.active ? '' : 'row-muted'}">
         <td>${manual ? `<button class="btn-icon" data-mv="-1">▲</button><button class="btn-icon" data-mv="1">▼</button>` : `<small class="muted">${a.sort_order}</small>`}</td>
-        <td><strong>${esc(a.name)}</strong><br><small class="muted">${esc([a.article_no, a.pack_size, a.manufacturer].filter(Boolean).join(' · '))}</small>${a.unavailable_since ? '<br><span class="pill pill-dark">nicht verfügbar</span>' : ''}</td>
+        <td><strong>${esc(a.name)}</strong><br><small class="muted">${esc([a.article_no, a.pack_size, a.manufacturer].filter(Boolean).join(' · '))}</small>${a.codes.length ? ` <span class="pill" title="${esc(a.codes.join(', '))}">🏷️ ${a.codes.length}</span>` : ''}${a.unavailable_since ? '<br><span class="pill pill-dark">nicht verfügbar</span>' : ''}</td>
         <td>${esc(a.category_name || '–')}</td><td>${esc(a.supplier_name || '–')}</td><td>${esc(a.location_name || '–')}</td>
         <td class="num">${fmtQty(a.min_stock)}</td><td class="num">${fmtQty(a.max_stock)}</td>
         <td class="num">${a.current_stock === null ? '<span class="muted">?</span>' : fmtQty(a.current_stock)} <small>${esc(a.unit_plural || '')}</small></td>
@@ -91,8 +97,9 @@ export async function render(el, { can, setActions }) {
     } catch (err) { toast(err.message, 'error'); }
   });
 
-  async function editDialog(id) {
+  async function editDialog(id, { code: presetCode = '' } = {}) {
     const a = id ? await get(`/api/articles/${id}`) : { active: 1, order_step: 1, min_order_qty: 0, price_net: 0, min_stock: 0, max_stock: 0 };
+    let codes = id ? await get(`/api/articles/${id}/codes`) : [];
     const ro = !can('articles.manage');
     const roMM = !can('minmax.manage');
     const roP = !can('prices.manage');
@@ -126,6 +133,12 @@ export async function render(el, { can, setActions }) {
           <div class="img-edit"><img id="img-prev" alt="" ${image ? `src="${image}"` : 'hidden'}>
           ${ro ? '' : '<label class="btn btn-sm">Bild wählen / Foto<input type="file" accept="image/*" capture="environment" id="img-in" hidden></label><button type="button" class="btn btn-sm" id="img-del">Bild entfernen</button>'}</div></div>
         <div class="hint span2" id="calc-hint"></div>
+        <div class="field span2 codes-box"><span>🏷️ Barcodes / QR-Codes / Etiketten-Code</span>
+          <div id="code-list"></div>
+          ${ro ? '' : `<div class="row"><input id="code-in" data-scan-accept placeholder="Code scannen oder eintippen, dann Enter" autocomplete="off" value="${esc(presetCode)}">
+            <button type="button" class="btn btn-sm" id="code-add">Hinzufügen</button>${id ? '<button type="button" class="btn btn-sm" id="code-gen">Eigenen Code erzeugen</button>' : ''}</div>`}
+          ${id ? '<div class="btn-row mt"><button type="button" class="btn btn-sm" id="lbl-a4">🖨️ Etikett A4</button><button type="button" class="btn btn-sm" id="lbl-bon">🧾 Etikett Bondrucker</button></div>' : ''}
+        </div>
       </form>
       ${id && a.movements?.length ? `<details class="mt"><summary>Bestandsbewegungen (${a.movements.length})</summary><div class="table-wrap"><table class="table table-sm"><thead><tr><th>Zeit</th><th>Art</th><th class="num">Vorher</th><th class="num">Nachher</th><th class="num">Änderung</th><th>Benutzer</th><th>Bemerkung</th></tr></thead>
         <tbody>${a.movements.map((mv) => `<tr><td>${fmtDateTime(mv.at)}</td><td>${({ count: 'Kontrolle', receipt: 'Wareneingang', correction: 'Korrektur' })[mv.type]}</td><td class="num">${mv.qty_before === null ? '–' : fmtQty(mv.qty_before)}</td><td class="num">${mv.qty_after === null ? '–' : fmtQty(mv.qty_after)}</td><td class="num">${mv.delta === null ? '' : (mv.delta > 0 ? '+' : '') + fmtQty(mv.delta)}</td><td>${esc(mv.user_name || '')}</td><td>${esc([mv.note, mv.list_number].filter(Boolean).join(' · '))}</td></tr>`).join('')}</tbody></table></div></details>` : ''}`,
@@ -146,6 +159,8 @@ export async function render(el, { can, setActions }) {
           d.active = form.active.checked;
           if (!ro) d.image = image;
           const saved = id ? await put(`/api/articles/${id}`, d) : await post('/api/articles', d);
+          const pending = mm.body.querySelector('#code-in')?.value.trim();
+          if (pending) { try { await post(`/api/articles/${saved.id}/codes`, { code: pending }); } catch (e) { toast(`Artikel gespeichert, Code nicht: ${e.message}`, 'warn', 7000); } }
           toast(`„${saved.name}“ gespeichert.`, 'success');
           await load();
         } }]),
@@ -167,6 +182,28 @@ export async function render(el, { can, setActions }) {
     });
     m.body.querySelector('#img-del')?.addEventListener('click', () => { image = null; m.body.querySelector('#img-prev').hidden = true; });
     m.body.querySelector('#corr')?.addEventListener('click', () => correctDialog(a, m));
+    const KIND = { ean: 'EAN', own: 'Eigener Code', case: 'Karton-EAN', other: 'Code' };
+    const drawCodes = () => {
+      const box = m.body.querySelector('#code-list');
+      box.innerHTML = codes.length ? `<ul class="code-list">${codes.map((c) => `<li><span class="code-svg">${(() => { try { return barcodeSvg(c.code, { height: 28, module: 1.2, quiet: 4, fontSize: 9 }); } catch { return ''; } })()}</span>
+        <span class="grow"><code>${esc(c.code)}</code> <small class="muted">${KIND[c.kind]}${c.ean_valid === false ? ' · <span class="text-red">Prüfziffer ungültig</span>' : ''}</small></span>
+        ${ro ? '' : `<button type="button" class="btn-icon danger" data-del-code="${c.id}" title="Code entfernen">🗑</button>`}</li>`).join('')}</ul>`
+        : `<p class="muted small">${id ? 'Noch kein Code. Ware scannen, eintippen oder eigenen Code erzeugen (für Regaletiketten).' : 'Optional: Code jetzt scannen – er wird beim Speichern zugeordnet.'}</p>`;
+      box.querySelectorAll('[data-del-code]').forEach((b) => b.addEventListener('click', async () => {
+        try { await del(`/api/articles/${id}/codes/${b.dataset.delCode}`); codes = await get(`/api/articles/${id}/codes`); drawCodes(); } catch (e) { toast(e.message, 'error'); }
+      }));
+    };
+    drawCodes();
+    const addCode = async () => {
+      const inp = m.body.querySelector('#code-in');
+      const v = inp.value.trim(); if (!v || !id) return;
+      try { await post(`/api/articles/${id}/codes`, { code: v }); inp.value = ''; codes = await get(`/api/articles/${id}/codes`); drawCodes(); toast('Code gespeichert.', 'success'); } catch (e) { toast(e.message, 'error'); }
+    };
+    m.body.querySelector('#code-add')?.addEventListener('click', addCode);
+    m.body.querySelector('#code-in')?.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === 'Tab') { if (id) { e.preventDefault(); addCode(); } else if (e.key === 'Enter') e.preventDefault(); } });
+    m.body.querySelector('#code-gen')?.addEventListener('click', async () => { try { await post(`/api/articles/${id}/codes/generate`); codes = await get(`/api/articles/${id}/codes`); drawCodes(); } catch (e) { toast(e.message, 'error'); } });
+    m.body.querySelector('#lbl-a4')?.addEventListener('click', () => openA4Labels([id], {}));
+    m.body.querySelector('#lbl-bon')?.addEventListener('click', () => printBonLabels([id], 1).then(async () => { codes = await get(`/api/articles/${id}/codes`); drawCodes(); }));
   }
 
   function correctDialog(a, parent) {
@@ -204,7 +241,67 @@ export async function render(el, { can, setActions }) {
     });
   }
 
+  // Scanner: gescannter Artikel öffnet sich; unbekannter Code → anlegen oder zuordnen
+  const popScan = pushScanHandler(async (code) => {
+    if (document.querySelector('.modal-backdrop')) return;
+    try {
+      const r = await get(`/api/codes/${encodeURIComponent(code)}`, { quiet: true });
+      editDialog(r.article.id);
+    } catch (e) {
+      if (e.status !== 404) return toast(e.message, 'error');
+      if (!can('articles.manage')) return toast(`Unbekannter Code „${code}“.`, 'error');
+      modal({
+        title: 'Unbekannter Code', body: `<p>Der Code <code>${esc(code)}</code> ist noch keinem Artikel zugeordnet.</p>`,
+        actions: [{ label: 'Abbrechen' },
+          { label: 'Vorhandenem Artikel zuordnen', onClick: async () => { const a = await assignCodeDialog(code); if (a) { await load(); editDialog(a.id); } } },
+          { label: '+ Neuen Artikel anlegen', cls: 'btn-primary', onClick: () => { editDialog(null, { code }); } }],
+      });
+    }
+  });
+  const open = sessionStorage.getItem('ek.openArticle');
+  if (open) { sessionStorage.removeItem('ek.openArticle'); editDialog(Number(open)); }
+
   await load();
+  return { destroy() { popScan(); } };
+}
+
+/** A4-Etikettenbogen in neuem Fenster. */
+function openA4Labels(ids, { layout = '3x8', copies = 1, skip = 0, minmax = false }) {
+  const w = window.open(`/labels.html#ids=${ids.join(',')}&layout=${layout}&copies=${copies}&skip=${skip}&minmax=${minmax ? 1 : 0}`, '_blank', 'width=900,height=1000');
+  if (!w) toast('Das Druckfenster wurde blockiert – bitte Pop-ups erlauben.', 'error');
+}
+
+async function printBonLabels(ids, copies) {
+  try {
+    const r = await post('/api/labels/print', { article_ids: ids, copies });
+    if (r.status === 'ok') toast(`${r.count} Etikett(en) an ${r.printer} gesendet.`, 'success'); else toast(`Druckfehler: ${r.error}`, 'error', 8000);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function labelsDialog(visibleIds, withoutCodeIds) {
+  if (!visibleIds.length) return toast('Keine Artikel in der aktuellen Ansicht.', 'info');
+  modal({
+    title: 'Etiketten drucken',
+    body: `<form id="lf" class="form-grid">
+      <div class="field"><span>Welche Artikel?</span>
+        <label class="check"><input type="radio" name="sel" value="all" checked> Alle in der aktuellen Ansicht (${visibleIds.length})</label>
+        <label class="check"><input type="radio" name="sel" value="nocode" ${withoutCodeIds.length ? '' : 'disabled'}> Nur Artikel ohne Code (${withoutCodeIds.length})</label></div>
+      <div class="field"><span>Format</span>
+        <label class="check"><input type="radio" name="fmt" value="3x8" checked> A4-Bogen 3 × 8 (63,5 × 33,9 mm, z. B. Avery Zweckform L7159)</label>
+        <label class="check"><input type="radio" name="fmt" value="2x7"> A4-Bogen 2 × 7 (99,1 × 38,1 mm, z. B. L7163)</label>
+        <label class="check"><input type="radio" name="fmt" value="bon"> Bondrucker (ein Etikett je Abschnitt)</label></div>
+      <div class="form-2col form-grid"><label class="field"><span>Exemplare je Artikel</span><input name="copies" inputmode="numeric" value="1"></label>
+        <label class="field"><span>Bereits benutzte Etiketten auf dem Bogen überspringen</span><input name="skip" inputmode="numeric" value="0"></label></div>
+      <label class="check"><input type="checkbox" name="minmax"> MIN/MAX auf dem Etikett anzeigen</label>
+      <p class="muted small">Artikel ohne Code erhalten automatisch einen eigenen Code (EK…), der sofort scannbar ist. Der Barcode (Code 128) wird von Barcode- und QR-Scannern gelesen.</p></form>`,
+    actions: [{ label: 'Abbrechen' }, { label: '🏷️ Drucken', cls: 'btn-primary', onClick: async (m) => {
+      const f = m.body.querySelector('#lf');
+      const ids = f.sel.value === 'nocode' ? withoutCodeIds : visibleIds;
+      const copies = Math.max(1, Math.min(50, Number(f.copies.value) || 1));
+      if (f.fmt.value === 'bon') await printBonLabels(ids, copies);
+      else openA4Labels(ids, { layout: f.fmt.value, copies, skip: Number(f.skip.value) || 0, minmax: f.minmax.checked });
+    } }],
+  });
 }
 
 const FIELD_LABELS = {

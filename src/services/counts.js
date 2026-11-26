@@ -178,6 +178,25 @@ function completeCount(db, user, countId) {
   });
 }
 
+/** Artikel nachträglich in eine laufende Zählung aufnehmen (z. B. nach Scan). */
+function addArticle(db, user, countId, articleId) {
+  return db.transaction(() => {
+    const c = getCountRow(db, countId);
+    if (c.status !== 'open') throw conflict(`Die Zählung ${c.number} ist bereits abgeschlossen.`);
+    const a = db.get('SELECT * FROM articles WHERE id = ? AND department = ? AND archived = 0', articleId, c.department);
+    if (!a) throw notFound('Artikel nicht gefunden.');
+    if (!a.active) throw unprocessable(`„${a.name}“ ist inaktiv.`);
+    const ex = db.get('SELECT id FROM stock_count_items WHERE count_id = ? AND article_id = ?', countId, a.id);
+    if (!ex) {
+      const seq = (db.get('SELECT MAX(seq) AS m FROM stock_count_items WHERE count_id = ?', countId).m || 0) + 1;
+      db.run('INSERT INTO stock_count_items(count_id, article_id, seq, expected_qty) VALUES(?,?,?,?)', countId, a.id, seq, a.current_stock);
+      audit(db, user, 'Artikel zur Zählung hinzugefügt', 'count', countId, { nummer: c.number, artikel: a.name });
+    }
+    const res = loadCount(db, countId);
+    return { ...res, added_item_id: res.items.find((i) => i.article_id === a.id).id };
+  });
+}
+
 /** Zählung abschließen und Einkaufsliste fertigstellen (Status "Einkaufsbereit"). */
 function finishCount(db, user, can, countId) {
   return db.transaction(() => {
@@ -204,4 +223,4 @@ function listCounts(db, department = 'service') {
     LEFT JOIN users u ON u.id = sc.created_by WHERE sc.department = ? GROUP BY sc.id ORDER BY sc.id DESC LIMIT 200`, department);
 }
 
-module.exports = { createCount, loadCount, recordItem, completeCount, finishCount, listCounts };
+module.exports = { createCount, loadCount, recordItem, completeCount, finishCount, listCounts, addArticle };

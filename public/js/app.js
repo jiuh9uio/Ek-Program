@@ -1,6 +1,7 @@
 // Einstieg der Oberfläche: Anmeldung, Navigation, Hash-Router.
 import { get, post, setUnauthorizedHandler } from './api.js';
 import { esc, toast, modal } from './ui.js';
+import { enableScanner, setFallbackHandler } from './scanner.js';
 import { setUser, prefs as rwPrefs, setPrefs as rwSetPrefs, checkAchievements, sound } from './reward.js';
 
 const VIEWS = {
@@ -42,11 +43,24 @@ function applyMe(me) {
   state.catalog = me.permissions_catalog;
   state.defaultAdminPassword = me.default_admin_password;
   setUser(me.user.id);
+  enableScanner(true);
   setTimeout(() => checkAchievements(), 1500);
 }
 
 // ---------------- Anmeldung (touchfreundlich: Benutzerkacheln + PIN-Feld) ----------------
+// Scan außerhalb von Zählung/Einkaufsmodus/Artikeln: Artikel öffnen bzw. Code zuordnen
+setFallbackHandler(async (code) => {
+  if (!state.user || document.querySelector('.modal-backdrop')) return;
+  const { resolveCode } = await import('./views/scanhelp.js');
+  const art = await resolveCode(code);
+  if (!art) return;
+  toast(`📷 ${art.name}`, 'info');
+  sessionStorage.setItem('ek.openArticle', String(art.id));
+  navigate('/articles');
+});
+
 async function renderLogin() {
+  enableScanner(false);
   if (currentView && currentView.destroy) currentView.destroy();
   currentView = null;
   const app = document.getElementById('app');

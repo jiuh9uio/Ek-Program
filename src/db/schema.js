@@ -275,4 +275,16 @@ module.exports = [
   ALTER TABLE articles ADD COLUMN order_unit_id INTEGER REFERENCES units(id);
   ALTER TABLE articles ADD COLUMN units_per_order REAL NOT NULL DEFAULT 1 CHECK (units_per_order > 0);
   `,
+  // ---------- Migration 4: Barcodes / QR-Codes / eigene Etiketten-Codes je Artikel ----------
+  `
+  CREATE TABLE article_codes (
+    id         INTEGER PRIMARY KEY,
+    article_id INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    code       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    kind       TEXT NOT NULL DEFAULT 'other' CHECK (kind IN ('ean','own','case','other')),
+    note       TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_article_codes_article ON article_codes(article_id);
+  `,
 ];

@@ -28,6 +28,7 @@ const SYNONYMS = {
   order_step: ['gebindeschritt', 'bestellintervall', 'schritt', 'bestellschritt'],
   notes: ['bemerkung', 'bemerkungen', 'notiz', 'hinweis', 'kommentar', 'begruendung'],
   active: ['aktiv'],
+  barcode: ['barcode', 'ean', 'gtin', 'ean13', 'code', 'qrcode', 'etikett', 'etikettencode', 'strichcode', 'scancode'],
 };
 
 function fieldFor(header) {
@@ -173,6 +174,7 @@ function importTable(db, user, can, text, { dryRun = true, createNew = true, dep
             if (!Number.isFinite(n)) throw unprocessable(`„${raw[f]}“ ist keine gültige Zahl.`);
             body[f] = n;
           }
+          if (raw.barcode !== undefined) res.barcode = raw.barcode;
           if (raw.active !== undefined) body.active = !/^(nein|no|0|false|inaktiv)$/i.test(raw.active);
           if (raw.category !== undefined) body.category_id = lookup('categories', raw.category, createdRefs);
           if (raw.supplier !== undefined) body.supplier_id = lookup('suppliers', raw.supplier, createdRefs);
@@ -190,6 +192,13 @@ function importTable(db, user, can, text, { dryRun = true, createNew = true, dep
           const t = new Date().toISOString();
           if (before) {
             const ch = diff(before, a, ALL_FIELDS);
+            if (raw.barcode !== undefined) {
+              const C = require('./codes');
+              const code = C.normCode(raw.barcode);
+              const owner = db.get('SELECT article_id FROM article_codes WHERE code = ? COLLATE NOCASE', code);
+              if (owner && owner.article_id !== before.id) throw unprocessable(`Code „${code}“ gehört bereits zu einem anderen Artikel.`);
+              if (!owner) { C.addCode(db, user, before.id, { code }); ch.barcode = { von: null, nach: code }; }
+            }
             if (!Object.keys(ch).length) { res.action = 'unchanged'; res.name = before.name; return; }
             db.run(`UPDATE articles SET ${ALL_FIELDS.map((f) => `${f} = ?`).join(', ')}, updated_at = ? WHERE id = ?`, ...ALL_FIELDS.map((f) => a[f]), t, before.id);
             if (a.price_net !== before.price_net) db.run("UPDATE purchase_items SET unit_price_est = ? WHERE article_id = ? AND list_id IN (SELECT id FROM purchase_lists WHERE status IN ('draft','ready'))", a.price_net, before.id);
@@ -199,6 +208,7 @@ function importTable(db, user, can, text, { dryRun = true, createNew = true, dep
             const id = Number(db.run(`INSERT INTO articles(department, ${ALL_FIELDS.join(',')}, created_at, updated_at) VALUES(?, ${ALL_FIELDS.map(() => '?').join(',')}, ?, ?)`, department, ...ALL_FIELDS.map((f) => a[f]), t, t).lastInsertRowid);
             const created = db.get('SELECT * FROM articles WHERE id = ?', id);
             byNo.set(normH(a.article_no), created); byName.set(normH(a.name), created);
+            if (raw.barcode !== undefined) require('./codes').addCode(db, user, id, { code: raw.barcode });
             res.action = 'create'; res.name = a.name; res.article_no = a.article_no; res.id = id;
             res.changes = { min_stock: { von: null, nach: a.min_stock }, max_stock: { von: null, nach: a.max_stock } };
           }

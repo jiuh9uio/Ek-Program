@@ -117,4 +117,4 @@ async function printerStatus(db, printerId) {
   return s;
 }
 
-module.exports = { printList, previewList, testPrint, reprint, printerStatus, getPrinter };
+module.exports = { printList, previewList, testPrint, reprint, printerStatus, getPrinter, printDoc };
