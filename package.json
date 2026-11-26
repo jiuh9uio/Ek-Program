@@ -5,7 +5,9 @@
   "main": "src/main.js",
   "private": true,
   "license": "UNLICENSED",
-  "engines": { "node": ">=22.13" },
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "start": "node src/main.js",
     "dev": "node src/main.js --no-browser",
@@ -15,6 +17,7 @@
   },
   "devDependencies": {
     "esbuild": "0.28.2",
-    "postject": "1.0.0-alpha.6"
+    "postject": "1.0.0-alpha.6",
+    "resedit": "^2.0.3"
   }
 }

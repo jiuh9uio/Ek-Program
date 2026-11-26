@@ -73,6 +73,40 @@ function stripPeSignature(file) {
   return out;
 }
 
+/** Programmsymbol (assets/icon.ico) und Dateieigenschaften in die EXE schreiben. */
+function setWindowsIconAndVersion(file) {
+  const ResEdit = require('resedit');
+  const pkg = require(path.join(ROOT, 'package.json'));
+  const exe = ResEdit.NtExecutable.from(fs.readFileSync(file), { ignoreCert: true });
+  const res = ResEdit.NtExecutableResource.from(exe);
+  const icon = ResEdit.Data.IconFile.from(fs.readFileSync(path.join(ROOT, 'assets', 'icon.ico')));
+  const groups = ResEdit.Resource.IconGroupEntry.fromEntries(res.entries);
+  const groupId = groups.length ? groups[0].id : 1;
+  const lang = groups.length ? groups[0].lang : 1031;
+  ResEdit.Resource.IconGroupEntry.replaceIconsForResource(res.entries, groupId, lang, icon.icons.map((i) => i.data));
+
+  const [maj, min, pat] = pkg.version.split('.').map(Number);
+  const vi = ResEdit.Resource.VersionInfo.fromEntries(res.entries)[0] || ResEdit.Resource.VersionInfo.createEmpty();
+  vi.setFileVersion(maj, min, pat, 0);
+  vi.setProductVersion(maj, min, pat, 0);
+  const strings = {
+    FileDescription: 'EK-Service – Einkauf & Bestand (Service)',
+    ProductName: 'EK-Service',
+    CompanyName: '',
+    InternalName: 'EK-Service',
+    OriginalFilename: 'EK-Service.exe',
+    LegalCopyright: '',
+    FileVersion: pkg.version,
+    ProductVersion: pkg.version,
+  };
+  const langs = vi.getAllLanguagesForStringValues();
+  for (const l of (langs.length ? langs : [{ lang: 1031, codepage: 1200 }])) vi.setStringValues(l, strings);
+  vi.outputToResourceEntries(res.entries);
+  res.outputResource(exe);
+  fs.writeFileSync(file, Buffer.from(exe.generate()));
+  log(`Programmsymbol (${icon.icons.length} Größen) und Versionsinfo ${pkg.version} gesetzt.`);
+}
+
 function listFiles(dir, base = dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     const full = path.join(dir, e.name);
@@ -117,6 +151,8 @@ async function main() {
   log('Injiziere Anwendung …');
   const { inject } = require('postject');
   await inject(out, 'NODE_SEA_BLOB', fs.readFileSync(seaConfig.output), { sentinelFuse: FUSE });
+  // Symbol erst nach der Injektion setzen (resedit übernimmt alle Ressourcen inkl. NODE_SEA_BLOB)
+  if (target.startsWith('win')) setWindowsIconAndVersion(out);
   const mb = (fs.statSync(out).size / 1024 / 1024).toFixed(1);
   log(`Fertig: ${path.relative(ROOT, out)} (${mb} MB, Node ${nodeVersion})`);
 }

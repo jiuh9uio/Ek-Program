@@ -171,7 +171,8 @@ scripts/build-exe.js   EXE-Erstellung
 npm install
 npm start                 # http://localhost:8080
 npm test                  # 42 Tests: Berechnungen, Bestandsbuchungen, Rechte, Druck (simulierte Drucker), PDF, Sicherung
-npm run build:exe         # → dist/EK-Service.exe (Windows x64, baubar unter Windows/Linux/macOS)
+npm run build:exe         # → dist/EK-Service.exe (Windows x64, mit Programmsymbol; baubar unter Windows/Linux/macOS)
+node scripts/make-icon.js # Programmsymbol assets/icon.ico aus assets/icon.svg neu erzeugen (benötigt Playwright)
 ```
 
 Bei jedem Push baut der GitHub-Actions-Workflow `Windows-EXE bauen` die EXE auf einem Windows-Server, startet sie dort zur Probe und stellt sie als Download-Artefakt bereit.
