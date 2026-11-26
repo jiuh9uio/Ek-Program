@@ -8,10 +8,11 @@ export async function render(el, { can, setActions }) {
   const f = JSON.parse(sessionStorage.getItem('ek.art.filter') || '{"q":"","cat":"","sup":"","loc":"","status":"","view":"active","sort":"name","dir":1}');
   const saveF = () => sessionStorage.setItem('ek.art.filter', JSON.stringify(f));
 
-  const acts = setActions(`${can('articles.manage') ? '<button class="btn" id="csv-exp">CSV-Export</button><button class="btn" id="csv-imp">CSV-Import</button><button class="btn btn-primary" id="new-art">+ Neuer Artikel</button>' : ''}`);
+  const acts = setActions(`${can('articles.manage') ? '<button class="btn" id="csv-exp">CSV-Export</button><button class="btn" id="csv-imp">CSV-Import</button><button class="btn" id="paste-imp">📋 Tabelle einfügen (MIN/MAX)</button><button class="btn btn-primary" id="new-art">+ Neuer Artikel</button>' : ''}`);
   acts.querySelector('#new-art')?.addEventListener('click', () => editDialog(null));
   acts.querySelector('#csv-exp')?.addEventListener('click', () => download('/api/articles/export.csv'));
   acts.querySelector('#csv-imp')?.addEventListener('click', importDialog);
+  acts.querySelector('#paste-imp')?.addEventListener('click', () => pasteDialog(sups, load));
 
   el.innerHTML = `
     <div class="toolbar toolbar-wrap">
@@ -107,7 +108,9 @@ export async function render(el, { can, setActions }) {
         <label class="field"><span>Lieferant</span><select name="supplier_id" ${dis(ro)}>${options(sups.filter((s) => s.active || s.id === a.supplier_id), a.supplier_id)}</select></label>
         <label class="field"><span>Lagerort</span><select name="location_id" ${dis(ro)}>${options(locs.filter((l) => l.active || l.id === a.location_id), a.location_id)}</select></label>
         <label class="field"><span>Gebindegröße</span><input name="pack_size" value="${esc(a.pack_size || '')}" placeholder="z. B. 24 x 0,33 l" ${dis(ro)}></label>
-        <label class="field"><span>Mengeneinheit</span><select name="unit_id" ${dis(ro)}>${options(units, a.unit_id)}</select></label>
+        <label class="field"><span>Mengeneinheit (Zähleinheit)</span><select name="unit_id" ${dis(ro)}>${options(units, a.unit_id)}</select></label>
+        <label class="field"><span>Bestelleinheit (optional, z. B. Karton)</span><select name="order_unit_id" ${dis(ro)}>${options(units, a.order_unit_id, { empty: '– wie Zähleinheit –' })}</select></label>
+        <label class="field"><span>Inhalt je Bestelleinheit (in Zähleinheiten)</span><input name="units_per_order" inputmode="decimal" value="${fmtNum(a.units_per_order ?? 1)}" ${dis(ro)}></label>
         <label class="field"><span>Einkaufspreis netto (€ je Einheit)</span><input name="price_net" inputmode="decimal" value="${fmtNum(a.price_net)}" ${dis(roP)}></label>
         <label class="field"><span>Mindestbestellmenge</span><input name="min_order_qty" inputmode="decimal" value="${fmtNum(a.min_order_qty)}" ${dis(ro)}></label>
         <label class="field"><span>Mindestbestand (MIN)</span><input name="min_stock" inputmode="decimal" value="${fmtNum(a.min_stock)}" ${dis(roMM)}></label>
@@ -139,7 +142,7 @@ export async function render(el, { can, setActions }) {
         ...(ro && roMM && roP ? [] : [{ label: 'Speichern', cls: 'btn-primary', onClick: async (mm) => {
           const form = mm.body.querySelector('#af');
           const d = formData(form);
-          for (const k of ['price_net', 'min_stock', 'max_stock', 'min_order_qty', 'order_step', 'current_stock']) if (d[k] !== undefined) { const n = parseNum(d[k]); if (Number.isNaN(n)) throw new Error('Bitte gültige Zahlen eingeben.'); d[k] = n; }
+          for (const k of ['price_net', 'min_stock', 'max_stock', 'min_order_qty', 'order_step', 'current_stock', 'units_per_order']) if (d[k] !== undefined) { const n = parseNum(d[k]); if (Number.isNaN(n)) throw new Error('Bitte gültige Zahlen eingeben.'); d[k] = n; }
           d.active = form.active.checked;
           if (!ro) d.image = image;
           const saved = id ? await put(`/api/articles/${id}`, d) : await post('/api/articles', d);
@@ -153,6 +156,7 @@ export async function render(el, { can, setActions }) {
       const min = parseNum(form.min_stock.value) || 0; const max = parseNum(form.max_stock.value) || 0;
       const h = m.body.querySelector('#calc-hint');
       if (max > 0 && max < min) h.innerHTML = '<span class="text-red">MAX muss ≥ MIN sein.</span>';
+      else if (max > 0 && (parseNum(form.units_per_order.value) || 1) > 1 && form.order_unit_id.value) h.textContent = `Bestellempfehlung, sobald Ist + bestellt ≤ ${fmtQty(min)} – aufgefüllt bis ${fmtQty(max)}, immer in ganzen ${form.order_unit_id.selectedOptions[0].text}-Einheiten à ${fmtQty(parseNum(form.units_per_order.value))}.`;
       else if (max > 0) h.textContent = `Bestellempfehlung entsteht, sobald Ist-Bestand + bestellte Menge ≤ ${fmtQty(min)} ist – aufgefüllt wird bis ${fmtQty(max)} (gerundet auf Gebindeschritt ${fmtQty(parseNum(form.order_step.value) || 1)}).`;
       else h.textContent = 'Ohne MAX (> 0) wird keine automatische Bestellempfehlung erzeugt.';
     };
@@ -202,6 +206,88 @@ export async function render(el, { can, setActions }) {
 
   await load();
 }
+
+const FIELD_LABELS = {
+  article_no: 'Artikelnummer', name: 'Artikelname', category: 'Kategorie', category_id: 'Kategorie', manufacturer: 'Hersteller', supplier: 'Lieferant', supplier_id: 'Lieferant',
+  location: 'Lagerort', location_id: 'Lagerort', pack_size: 'Gebinde', unit: 'Zähleinheit', unit_id: 'Zähleinheit', order_unit: 'Bestelleinheit', order_unit_id: 'Bestelleinheit',
+  units_per_order: 'Inhalt je Bestelleinheit', min_stock: 'MIN', max_stock: 'MAX', price_net: 'EK netto', min_order_qty: 'Mindestbestellmenge', order_step: 'Gebindeschritt', notes: 'Bemerkung', active: 'Aktiv', sort_order: 'Sortierung',
+};
+
+function claudePrompt(markdown) {
+  return `Du bist Einkaufsexperte für den Servicebereich (Bar, Restaurant, Frühstück) eines Hotels.
+Berechne für die folgenden Artikel sinnvolle Mindestbestände (MIN) und Maximalbestände (MAX).
+
+Regeln:
+- MIN = Meldebestand: Menge, die bis zur nächsten Lieferung bzw. zum nächsten Einkauf reicht, plus kleine Sicherheitsreserve.
+- MAX = Zielbestand direkt nach dem Einkauf – so niedrig wie möglich (wenig gebundenes Kapital), aber ausreichend bis zum übernächsten Einkauf.
+- MIN und MAX immer in der Zähleinheit (z. B. Flaschen, Kästen). MAX - MIN sollte zu ganzen Bestelleinheiten passen (z. B. Karton à 6).
+- Fehlende Bestelleinheit und Inhalt (z. B. Karton, 6) gern ergänzen, wenn typisch.
+- Weitere übliche Artikel darfst du als neue Zeilen ergänzen (Artikelnummer leer lassen).
+
+Angaben zu meinem Betrieb (bitte ergänzen):
+- Öffnungstage / Gäste pro Woche: …
+- Wie oft wird eingekauft bzw. geliefert: …
+- Ungefährer Verbrauch pro Woche (falls bekannt): …
+
+Antworte mit genau einer Markdown-Tabelle mit exakt diesen Spalten (Zahlen mit Komma, keine Einheiten in den Zahlenspalten):
+
+${markdown}`;
+}
+
+function pasteDialog(sups, reload) {
+  let preview = null;
+  const m = modal({
+    title: 'Tabelle einfügen – MIN/MAX z. B. von Claude', wide: true,
+    body: `<div class="steps"><span>1. Anfrage kopieren</span><span>2. In Claude einfügen &amp; Betrieb beschreiben</span><span>3. Antwort-Tabelle hier einfügen</span><span>4. Vorschau prüfen → Übernehmen</span></div>
+      <div class="btn-row"><select id="tpl-sup"><option value="">Alle Artikel</option>${sups.map((s) => `<option value="${s.id}">nur ${esc(s.name)}</option>`).join('')}</select>
+        <button class="btn" id="tpl">📋 Anfrage für Claude kopieren</button></div>
+      <textarea id="tpl-text" class="paste-area mt" readonly hidden></textarea>
+      <label class="field mt"><span>Tabelle hier einfügen (Markdown von Claude, aus Excel kopiert oder CSV)</span>
+        <textarea id="paste" class="paste-area" placeholder="| Artikelname | MIN | MAX |&#10;|---|---|---|&#10;| Aperol | 3 | 12 |"></textarea></label>
+      <label class="check"><input type="checkbox" id="create" checked> Unbekannte Artikel neu anlegen (fehlende Lieferanten, Kategorien, Einheiten werden ergänzt)</label>
+      <div id="pv" class="mt"></div>`,
+    actions: [{ label: 'Schließen' }, { label: 'Vorschau', cls: '', onClick: () => runPreview().then(() => false) }, {
+      label: 'Übernehmen', cls: 'btn-primary', onClick: async (mm) => {
+        if (!preview) { await runPreview(); return false; }
+        const r = await post('/api/articles/paste-import', { text: mm.body.querySelector('#paste').value, apply: true, create_new: mm.body.querySelector('#create').checked });
+        toast(`Übernommen: ${r.counts.create} neu, ${r.counts.update} aktualisiert${r.counts.error ? `, ${r.counts.error} Fehler` : ''}.`, r.counts.error ? 'warn' : 'success', 6000);
+        await reload();
+        return !r.counts.error;
+      },
+    }],
+  });
+  const pv = m.body.querySelector('#pv');
+  const applyBtn = m.el.querySelector('.modal-foot .btn-primary');
+  m.body.querySelector('#paste').addEventListener('input', () => { preview = null; pv.innerHTML = ''; });
+  m.body.querySelector('#create').addEventListener('change', () => { preview = null; });
+  m.body.querySelector('#tpl').addEventListener('click', async () => {
+    const sid = m.body.querySelector('#tpl-sup').value;
+    const t = await get(`/api/articles/claude-template${sid ? '?supplier_id=' + sid : ''}`);
+    const text = claudePrompt(t.markdown);
+    const ta = m.body.querySelector('#tpl-text');
+    ta.value = text; ta.hidden = false;
+    try { await navigator.clipboard.writeText(text); toast(`Anfrage mit ${t.count} Artikeln kopiert – jetzt in Claude einfügen.`, 'success'); } catch { ta.select(); toast('Bitte den markierten Text kopieren (Strg+C).', 'info'); }
+  });
+
+  async function runPreview() {
+    const text = m.body.querySelector('#paste').value;
+    if (!text.trim()) { toast('Bitte zuerst eine Tabelle einfügen.', 'error'); return; }
+    try {
+      preview = await post('/api/articles/paste-import', { text, create_new: m.body.querySelector('#create').checked });
+    } catch (e) { preview = null; pv.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; }
+    const ch = (c) => Object.entries(c || {}).map(([k, v]) => `${esc(FIELD_LABELS[k] || k)}: ${v.von === null || v.von === undefined ? '' : `${esc(fmtCell(v.von))} → `}<b>${esc(fmtCell(v.nach))}</b>`).join(' · ');
+    const A = { create: ['st-green', 'neu'], update: ['st-blue', 'ändern'], unchanged: ['st-grey', 'unverändert'], error: ['st-red', 'Fehler'], skipped: ['st-grey', 'übersprungen'] };
+    const c = preview.counts;
+    pv.innerHTML = `<div class="hint">Erkannt als <b>${esc(preview.format)}</b> · ${c.create} neu · ${c.update} ändern · ${c.unchanged} unverändert${c.error ? ` · <span class="text-red">${c.error} mit Fehler (werden nicht übernommen)</span>` : ''}</div>
+      <div class="chips mt">${preview.columns.map((col) => `<span class="pill ${col.field ? '' : 'muted'}" title="${col.field ? 'wird übernommen' : 'nicht erkannt – wird ignoriert'}">${esc(col.header)} → ${col.field ? esc(FIELD_LABELS[col.field]) : 'ignoriert'}</span>`).join('')}</div>
+      <div class="table-wrap mt"><table class="table table-sm"><thead><tr><th>Zeile</th><th>Aktion</th><th>Artikel</th><th>Änderungen</th></tr></thead><tbody>
+      ${preview.rows.map((r) => `<tr class="imp-row-${r.action}"><td>${r.line}</td><td><span class="badge ${A[r.action][0]}">${A[r.action][1]}</span></td><td><strong>${esc(r.name || '')}</strong><br><small class="muted">${esc(r.article_no || '')}</small></td>
+        <td class="small">${r.error ? `<span class="text-red">${esc(r.error)}</span>` : ch(r.changes)}</td></tr>`).join('')}</tbody></table></div>
+      ${preview.created_refs.length ? `<p class="small muted">Wird zusätzlich angelegt: ${esc(preview.created_refs.join(', '))}</p>` : ''}`;
+    applyBtn.disabled = !(c.create + c.update);
+  }
+}
+const fmtCell = (v) => (typeof v === 'number' ? String(v).replace('.', ',') : v === true ? 'ja' : v === false ? 'nein' : String(v ?? '–'));
 
 const fmtNum = (n) => (n === null || n === undefined ? '' : String(n).replace('.', ','));
 

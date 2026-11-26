@@ -5,8 +5,9 @@ import { navigate, can } from '../app.js';
 
 export async function newListWizard() {
   const counting = can('stock.count') && can('list.create');
-  let locs = []; let cats = [];
-  if (counting) [locs, cats] = await Promise.all([get('/api/locations'), get('/api/categories')]);
+  let locs = []; let cats = []; let sups = [];
+  if (counting) [locs, cats, sups] = await Promise.all([get('/api/locations'), get('/api/categories'), get('/api/suppliers')]);
+  sups = sups.filter((s) => s.active && s.article_count > 0);
   const chips = (rows, name) => rows.filter((r) => r.active && r.article_count > 0).map((r) => `<label class="chip-check"><input type="checkbox" name="${name}" value="${r.id}" checked><span>${esc(r.name)} <small>${r.article_count}</small></span></label>`).join('');
 
   const m = modal({
@@ -21,6 +22,10 @@ export async function newListWizard() {
     <form id="wf" class="form-grid">
       <label class="field"><span>Bezeichnung (optional)</span><input name="title" placeholder="z. B. Wocheneinkauf"></label>
       ${counting ? `<div class="count-opts">
+        <div class="field"><span>🏪 Wo kaufst du ein?</span><div class="sup-tiles">
+          <label class="sup-tile"><input type="radio" name="sup" value="" checked><span><strong>Überall</strong><small>alle Lieferanten</small></span></label>
+          ${sups.map((s) => `<label class="sup-tile"><input type="radio" name="sup" value="${s.id}"><span><strong>${esc(s.name)}</strong><small>${s.article_count} Artikel</small></span></label>`).join('')}
+        </div></div>
         <div class="field"><span>Welche Lagerorte zählen? <button type="button" class="link-btn" data-all="loc">alle/keine</button></span><div class="chip-checks">${chips(locs, 'loc')}</div></div>
         <div class="field"><span>Welche Kategorien? <button type="button" class="link-btn" data-all="cat">alle/keine</button></span><div class="chip-checks">${chips(cats, 'cat')}</div></div>
         <label class="check"><input type="checkbox" name="only_due"> Nur fällige Artikel (nicht aktuell gezählt oder knapp)</label>
@@ -34,7 +39,8 @@ export async function newListWizard() {
         if (mode === 'count') {
           const sel = (n) => [...f.querySelectorAll(`input[name=${n}]`)];
           const pick = (n) => { const all = sel(n); const on = all.filter((x) => x.checked).map((x) => Number(x.value)); if (!on.length) throw new Error('Bitte mindestens einen Lagerort und eine Kategorie wählen.'); return on.length === all.length ? [] : on; };
-          const c = await post('/api/counts', { title: f.title.value, location_ids: pick('loc'), category_ids: pick('cat'), only_due: f.only_due.checked, only_minmax: f.only_minmax.checked });
+          const supId = Number(f.querySelector('input[name=sup]:checked')?.value) || null;
+          const c = await post('/api/counts', { title: f.title.value, supplier_ids: supId ? [supId] : [], location_ids: pick('loc'), category_ids: pick('cat'), only_due: f.only_due.checked, only_minmax: f.only_minmax.checked });
           toast(`Zählung ${c.number} gestartet – ${c.items.length} Artikel.`, 'success');
           navigate(`/count/${c.id}`);
         } else {

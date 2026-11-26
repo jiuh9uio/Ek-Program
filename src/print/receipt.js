@@ -67,6 +67,17 @@ function unitLabel(qty, unit, plural) {
   return Math.abs(Number(qty) - 1) < 1e-9 ? unit : (plural || unit);
 }
 
+/** Menge in Bestelleinheit, falls hinterlegt: { main: '2 Kartons', base: '12 Flaschen' | null } */
+function orderQty(qty, i) {
+  const base = `${fmtQty(qty)} ${unitLabel(qty, i.unit_name, i.unit_plural)}`.trim();
+  const upo = Number(i.units_per_order) || 1;
+  if (upo > 1 && i.order_unit_name) {
+    const n = Math.round((qty / upo) * 1000) / 1000;
+    return { main: `${fmtQty(n)} ${unitLabel(n, i.order_unit_name, i.order_unit_plural)}`, base: `= ${base}` };
+  }
+  return { main: base, base: null };
+}
+
 /**
  * Baut den Einkaufsbon für eine Liste.
  * @param list Ergebnis von loadList()
@@ -112,9 +123,10 @@ function buildListDoc(list, opts = {}) {
     g.items.sort((a, b) => a.article_name.localeCompare(b.article_name, 'de'));
     for (const i of g.items) {
       const qty = opts.onlyOpen ? i.open_qty : i.qty;
-      const qtyText = `${fmtQty(qty)} ${unitLabel(qty, i.unit_name, i.unit_plural)}`.trim();
-      itemLines(i.article_name, qtyText, W).forEach((l) => line(l));
+      const oq = orderQty(qty, i);
+      itemLines(i.article_name, oq.main, W).forEach((l) => line(l));
       const extra = [];
+      if (oq.base) extra.push(oq.base);
       if (i.pack_size) extra.push(i.pack_size);
       if (groupBy !== 'supplier' && !opts.supplierName && i.supplier_name) extra.push(i.supplier_name);
       if (opts.showPrices) extra.push(`ca. ${(qty * i.unit_price_est).toFixed(2).replace('.', ',')} EUR`);
@@ -253,4 +265,4 @@ function toText(doc, width = 48) {
   }).join('\n');
 }
 
-module.exports = { buildListDoc, buildTestDoc, toEscPos, toEposXml, toText, encodeText, wrap, itemLines, fmtQty, unitLabel, normalizeText, fmtDate, fmtDateTime, CODEPAGES };
+module.exports = { orderQty, buildListDoc, buildTestDoc, toEscPos, toEposXml, toText, encodeText, wrap, itemLines, fmtQty, unitLabel, normalizeText, fmtDate, fmtDateTime, CODEPAGES };

@@ -1,6 +1,6 @@
 // Schneller Einkaufsmodus: Schnellauswahl & Bestandskontrolle (touchoptimiert, automatische Speicherung).
 import { get, post } from '../api.js';
-import { esc, fmtQty, fmtAgo, unitFor, parseNum, statusBadge, toast, debounce, matches, promptDialog, emptyState } from '../ui.js';
+import { orderText, esc, fmtQty, fmtAgo, unitFor, parseNum, statusBadge, toast, debounce, matches, promptDialog, emptyState } from '../ui.js';
 import { navigate } from '../app.js';
 
 const LS_KEY = 'ek.mode.prefs';
@@ -113,7 +113,7 @@ export async function render(el, { can, setActions }) {
             <button data-act="qty+" aria-label="Bestellmenge plus">+</button>
             <span class="stepper-unit">${esc(unit(qtyVal || 2))}</span>
           </div>
-          <div class="rec">${a.recommended > 0 ? `Empfehlung: <b>${fmtQty(a.recommended)}</b> ${esc(unit(a.recommended))}` : a.current_stock === null && a.check_result !== 'ok' ? '<span class="muted">Empfehlung nach Bestandseingabe</span>' : '<span class="muted">kein Bedarf</span>'}${a.allowed_max !== null && !can('list.exceed_max') ? ` <span class="muted small">(max. ${fmtQty(a.allowed_max)})</span>` : ''}</div>` : ''}
+          <div class="rec">${a.recommended > 0 ? `Empfehlung: <b>${fmtQty(a.recommended)}</b> ${esc(unit(a.recommended))}${orderText(a.recommended, a).base ? ` <span class="text-blue">(${esc(orderText(a.recommended, a).main)})</span>` : ''}` : a.current_stock === null && a.check_result !== 'ok' ? '<span class="muted">Empfehlung nach Bestandseingabe</span>' : '<span class="muted">kein Bedarf</span>'}${a.allowed_max !== null && !can('list.exceed_max') ? ` <span class="muted small">(max. ${fmtQty(a.allowed_max)})</span>` : ''}</div>` : ''}
         </div>
         <div class="mcard-actions">
           ${can('stock.count') ? `<button class="btn btn-ok" data-act="ok">✓ Bestand ausreichend</button>
@@ -222,7 +222,7 @@ export async function render(el, { can, setActions }) {
     const id = Number(card.dataset.id);
     const a = data.articles.find((x) => x.id === id);
     const act = btn.dataset.act;
-    const step = a.order_step > 0 ? a.order_step : 1;
+    const step = a.step > 0 ? a.step : (a.order_step > 0 ? a.order_step : 1);
 
     if (act === 'toggle') {
       if (a.item) { a.item = null; replaceCard(a); qtySavers.get(id)?.cancel(); send(`qty-${id}`, '/api/mode/item', { article_id: id, qty: null }, id); return; }

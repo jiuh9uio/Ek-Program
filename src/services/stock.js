@@ -15,6 +15,13 @@ const EPS = 1e-9;
 
 const round3 = (n) => Math.round(n * 1000) / 1000;
 
+/** Bestellschritt: bei Bestelleinheit (z. B. Karton à 6) immer ganze Bestelleinheiten. */
+function stepOf(a) {
+  const upo = Number(a.units_per_order) || 1;
+  const step = Number(a.order_step) > 0 ? Number(a.order_step) : 1;
+  return upo > 1 ? upo * Math.max(1, Math.round(step / upo) || 1) : step;
+}
+
 function roundUpToStep(qty, step, minOrderQty = 0) {
   if (!(qty > EPS)) return 0;
   const s = step > 0 ? step : 1;
@@ -72,7 +79,7 @@ function evaluate(a, onOrder = 0, validDays = 7, now = Date.now()) {
 
   let recommended = 0;
   if (!confirmedOk && minMaxConfigured && effective !== null && effective <= min + EPS) {
-    recommended = roundUpToStep(max - effective, a.order_step, a.min_order_qty);
+    recommended = roundUpToStep(max - effective, stepOf(a), a.min_order_qty);
   }
 
   let status;
@@ -105,7 +112,7 @@ function allowedMaxQty(a, onOrder = 0) {
   const gap = Math.max(0, max - stock - onOrder);
   const evalRec = evaluate(a, onOrder, Infinity).recommended;
   // Aufrunden auf Gebinde ist erlaubt, ebenso die Mindestbestellmenge
-  return Math.max(roundUpToStep(gap, a.order_step, gap > 0 ? a.min_order_qty : 0), evalRec);
+  return Math.max(roundUpToStep(gap, stepOf(a), gap > 0 ? a.min_order_qty : 0), evalRec);
 }
 
-module.exports = { OPEN_LIST_STATUSES, roundUpToStep, openQuantities, evaluate, allowedMaxQty, isFresh, round3 };
+module.exports = { OPEN_LIST_STATUSES, stepOf, roundUpToStep, openQuantities, evaluate, allowedMaxQty, isFresh, round3 };

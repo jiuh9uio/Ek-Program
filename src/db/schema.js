@@ -270,4 +270,9 @@ module.exports = [
   );
   CREATE INDEX idx_count_items ON stock_count_items(count_id, seq);
   `,
+  // ---------- Migration 3: Bestelleinheit (z. B. zählen in Flaschen, bestellen in Kartons) ----------
+  `
+  ALTER TABLE articles ADD COLUMN order_unit_id INTEGER REFERENCES units(id);
+  ALTER TABLE articles ADD COLUMN units_per_order REAL NOT NULL DEFAULT 1 CHECK (units_per_order > 0);
+  `,
 ];

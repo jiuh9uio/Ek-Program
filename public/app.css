@@ -381,3 +381,16 @@ tfoot td { background: var(--surface-2); }
 .text-blue { color: var(--blue); }
 @media (max-width: 1100px) { .count-layout.with-list { grid-template-columns: 1fr; } .count-list { position: static; max-height: none; } }
 @media (max-width: 560px) { .count-card { padding: 14px; } .count-art h2 { font-size: 1.3rem; } .count-input input { width: 130px; } .count-input button { width: 62px; height: 62px; } .count-nav .btn { flex: 1; } }
+.sup-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+.sup-tile input { position: absolute; opacity: 0; }
+.sup-tile span { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border: 2px solid var(--border); border-radius: 12px; cursor: pointer; min-height: 64px; justify-content: center; }
+.sup-tile small { color: var(--muted); }
+.sup-tile input:checked + span { border-color: var(--primary); background: var(--blue-bg); }
+.sup-tile input:focus-visible + span { outline: 3px solid #bfdbfe; }
+.paste-area { width: 100%; min-height: 200px; font: 13px/1.4 Consolas, "Courier New", monospace; }
+.imp-row-create td:first-child { border-left: 4px solid var(--green); }
+.imp-row-update td:first-child { border-left: 4px solid var(--blue); }
+.imp-row-error td:first-child { border-left: 4px solid var(--red); }
+.imp-row-unchanged { color: var(--muted); }
+.steps { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.steps span { background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; font-size: .85rem; }

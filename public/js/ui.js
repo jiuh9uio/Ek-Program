@@ -169,3 +169,14 @@ export function download(url) {
 }
 
 export function emptyState(text, icon = '📭') { return `<div class="empty"><div class="empty-icon">${icon}</div><p>${esc(text)}</p></div>`; }
+
+/** Bestellmenge in Bestelleinheit: { n, main: '2 Kartons', base: '= 12 Flaschen' | '' , upo } */
+export function orderText(qty, a) {
+  const upo = Number(a.units_per_order) || 1;
+  const baseTxt = `${fmtQty(qty)} ${unitFor(qty, a.unit_name, a.unit_plural)}`.trim();
+  if (upo > 1 && a.order_unit_name) {
+    const n = Math.round((Number(qty) / upo) * 1000) / 1000;
+    return { n, upo, main: `${fmtQty(n)} ${unitFor(n, a.order_unit_name, a.order_unit_plural)}`, base: `= ${baseTxt}`, unit: (x) => unitFor(x, a.order_unit_name, a.order_unit_plural) };
+  }
+  return { n: Number(qty), upo: 1, main: baseTxt, base: '', unit: (x) => unitFor(x, a.unit_name, a.unit_plural) };
+}

@@ -4,13 +4,14 @@ const { evaluate, openQuantities } = require('./stock');
 const ARTICLE_SELECT = `
   SELECT a.*, c.name AS category_name, c.sort_order AS category_sort,
          s.name AS supplier_name, l.name AS location_name, l.sort_order AS location_sort,
-         u.name AS unit_name, u.plural AS unit_plural,
+         u.name AS unit_name, u.plural AS unit_plural, ou.name AS order_unit_name, ou.plural AS order_unit_plural,
          cu.display_name AS stock_checked_by_name
   FROM articles a
   LEFT JOIN categories c ON c.id = a.category_id
   LEFT JOIN suppliers s ON s.id = a.supplier_id
   LEFT JOIN locations l ON l.id = a.location_id
   LEFT JOIN units u ON u.id = a.unit_id
+  LEFT JOIN units ou ON ou.id = a.order_unit_id
   LEFT JOIN users cu ON cu.id = a.stock_checked_by`;
 
 /**

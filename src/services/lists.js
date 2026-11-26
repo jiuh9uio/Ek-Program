@@ -178,12 +178,13 @@ function loadList(db, id) {
   const items = db.all(`
     SELECT pi.*, a.name AS article_name, a.article_no, a.pack_size, a.current_stock, a.min_stock, a.max_stock,
            a.order_step, a.min_order_qty, a.stock_checked_at, a.check_result, a.price_net, a.active AS article_active,
-           u.name AS unit_name, u.plural AS unit_plural, c.name AS category_name, c.sort_order AS category_sort,
+           u.name AS unit_name, u.plural AS unit_plural, a.units_per_order, ou.name AS order_unit_name, ou.plural AS order_unit_plural, c.name AS category_name, c.sort_order AS category_sort,
            l.name AS location_name, l.sort_order AS location_sort, s.name AS supplier_name,
            s.min_order_value, s.shipping_cost, ab.display_name AS added_by_name
     FROM purchase_items pi
     JOIN articles a ON a.id = pi.article_id
     LEFT JOIN units u ON u.id = a.unit_id
+    LEFT JOIN units ou ON ou.id = a.order_unit_id
     LEFT JOIN categories c ON c.id = a.category_id
     LEFT JOIN locations l ON l.id = a.location_id
     LEFT JOIN suppliers s ON s.id = pi.supplier_id

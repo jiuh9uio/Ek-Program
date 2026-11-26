@@ -1,6 +1,6 @@
 // Geführte Bestandszählung (Inventur): Artikel für Artikel zählen → Nachkaufmenge automatisch auf die Einkaufsliste.
 import { get, post } from '../api.js';
-import { esc, fmtQty, fmtEur, fmtDateTime, fmtAgo, unitFor, parseNum, toast, confirmDialog, emptyState, download } from '../ui.js';
+import { esc, fmtQty, fmtEur, fmtDateTime, unitFor, parseNum, toast, confirmDialog, emptyState, download, orderText } from '../ui.js';
 import { navigate } from '../app.js';
 import { newListWizard } from './newlist.js';
 
@@ -31,7 +31,7 @@ function suggest(i, counted) {
   if (counted === null || !(i.max_stock > 0) || i.unavailable_since) return 0;
   const eff = counted + (i.on_order || 0);
   if (eff > i.min_stock + 1e-9) return 0;
-  const step = i.order_step > 0 ? i.order_step : 1;
+  const step = i.step > 0 ? i.step : (i.order_step > 0 ? i.order_step : 1);
   let q = Math.ceil((i.max_stock - eff) / step - 1e-9) * step;
   if (q <= 0) return 0;
   if (i.min_order_qty > 0 && q < i.min_order_qty) q = Math.ceil(i.min_order_qty / step - 1e-9) * step;
@@ -77,7 +77,7 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
       const head = i.location_name !== loc ? `<li class="cl-head">${esc((loc = i.location_name) || 'Ohne Lagerort')}</li>` : '';
       const icon = i.state === 'counted' ? '✓' : i.state === 'skipped' ? '⏭' : '○';
       return `${head}<li class="cl-row cl-${i.state} ${cur && cur.id === i.id ? 'cur' : ''}" data-jump="${i.id}"><span class="cl-ico">${icon}</span><span class="grow">${esc(i.name)}</span>
-        <span class="cl-val">${i.state === 'counted' ? fmtQty(i.counted_qty) : ''}${i.order ? ` <b class="text-blue">+${fmtQty(i.order.qty)}</b>` : ''}</span></li>`;
+        <span class="cl-val">${i.state === 'counted' ? fmtQty(i.counted_qty) : ''}${i.order ? ` <b class="text-blue">+${esc(orderText(i.order.qty, i).main)}</b>` : ''}</span></li>`;
     }).join('')}</ol></aside>`;
   }
 
@@ -87,6 +87,7 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
     const valid = counted !== null && !Number.isNaN(counted) && counted >= 0;
     const auto = valid ? suggest(i, counted) : (i.counted_qty !== null ? (i.order ? i.order.qty : 0) : 0);
     const order = orderOverride !== null ? orderOverride : (i.order && (i.order.source !== 'count' || !valid) ? i.order.qty : auto);
+    const ot = orderText(order, i);
     const idx = c.items.indexOf(i) + 1;
     const ro = c.status !== 'open';
     return `<section class="count-card">
@@ -98,6 +99,7 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
       <div class="mcard-meta">
         <span class="minmax"><b>MIN</b> ${fmtQty(i.min_stock)}</span><span class="minmax"><b>MAX</b> ${fmtQty(i.max_stock)}</span>
         <span class="minmax"><b>LETZTER BESTAND</b> ${i.expected_qty === null ? 'unbekannt' : fmtQty(i.expected_qty)}</span>
+        ${i.units_per_order > 1 && i.order_unit_name ? `<span class="minmax"><b>BESTELLT WIRD IN</b> ${esc(i.order_unit_name)} à ${fmtQty(i.units_per_order)} ${esc(i.unit_plural || '')}</span>` : ''}
         ${i.on_order > 0 ? `<span class="pill pill-blue">bereits bestellt: ${fmtQty(i.on_order)} (${esc(i.open_lists.map((l) => l.number).join(', '))})</span>` : ''}
         ${i.unavailable_since ? '<span class="pill pill-dark">als nicht verfügbar markiert</span>' : ''}
       </div>
@@ -113,9 +115,9 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
       </div><div class="count-side">
       <div class="count-result ${valid || i.counted_qty !== null ? (order > 0 ? 'need' : 'fine') : ''}">
         ${!valid && i.counted_qty === null ? '<span class="muted">Menge eingeben – das System berechnet die Nachkaufmenge.</span>'
-    : `<div class="cr-text">${order > 0 ? `🛒 Nachkaufen: <b>${fmtQty(order)} ${esc(unit(order))}</b> <small class="muted">${orderOverride !== null || (i.order && i.order.source === 'manual') ? '(manuell angepasst)' : `(auffüllen bis MAX ${fmtQty(i.max_stock)})`}</small>`
+    : `<div class="cr-text">${order > 0 ? `🛒 Nachkaufen: <b>${esc(ot.main)}</b> ${ot.base ? `<span class="muted">${esc(ot.base)}</span>` : ''} <small class="muted">${orderOverride !== null || (i.order && i.order.source === 'manual') ? '(manuell angepasst)' : `(auffüllen bis MAX ${fmtQty(i.max_stock)})`}</small>`
       : `✓ Genug da – kein Einkauf nötig${i.on_order > 0 ? ' (Nachschub ist bereits bestellt)' : ''}${!(i.max_stock > 0) ? ' <small class="muted">(kein MAX hinterlegt)</small>' : ''}`}</div>
-          ${can('list.create') && !ro ? `<div class="stepper stepper-order"><span class="stepper-label">Menge</span><button data-k="o-">−</button><input id="ord" inputmode="decimal" value="${order ? fmtQty(order) : ''}" placeholder="0"><button data-k="o+">+</button><span class="stepper-unit">${esc(unit(order || 2))}</span></div>` : ''}`}
+          ${can('list.create') && !ro ? `<div class="stepper stepper-order"><span class="stepper-label">Menge</span><button data-k="o-">−</button><input id="ord" inputmode="decimal" value="${order ? fmtQty(ot.n) : ''}" placeholder="0"><button data-k="o+">+</button><span class="stepper-unit">${esc(ot.unit(ot.n || 2))}</span></div>` : ''}`}
       </div>
       ${ro ? '' : `<div class="count-nav">
         <button class="btn btn-lg" data-k="back">← Zurück</button>
@@ -144,7 +146,7 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
     </section>
     <div class="grid-2 mt">
       <section class="card"><h2>Bestellvorschlag (${ordered.length})</h2>${ordered.length ? `<table class="table table-sm"><thead><tr><th>Artikel</th><th class="num">Gezählt</th><th class="num">Nachkaufen</th></tr></thead>
-        <tbody>${ordered.map((i) => `<tr data-jump="${i.id}"><td>${esc(i.name)}</td><td class="num">${i.counted_qty === null ? '–' : fmtQty(i.counted_qty)}</td><td class="num"><b>${fmtQty(i.order.qty)}</b> ${esc(unitFor(i.order.qty, i.unit_name, i.unit_plural))}</td></tr>`).join('')}</tbody></table>` : emptyState('Nichts nachzukaufen.', '👍')}</section>
+        <tbody>${ordered.map((i) => `<tr data-jump="${i.id}"><td>${esc(i.name)}</td><td class="num">${i.counted_qty === null ? '–' : fmtQty(i.counted_qty)}</td><td class="num"><b>${esc(orderText(i.order.qty, i).main)}</b>${orderText(i.order.qty, i).base ? `<br><small class="muted">${esc(orderText(i.order.qty, i).base)}</small>` : ''}</td></tr>`).join('')}</tbody></table>` : emptyState('Nichts nachzukaufen.', '👍')}</section>
       <section class="card"><h2>Soll/Ist-Differenzen (${diffs.length})</h2>${diffs.length ? `<table class="table table-sm"><thead><tr><th>Artikel</th><th class="num">Soll</th><th class="num">Ist</th><th class="num">Differenz</th></tr></thead>
         <tbody>${diffs.map((i) => `<tr data-jump="${i.id}"><td>${esc(i.name)}</td><td class="num">${fmtQty(i.expected_qty)}</td><td class="num">${fmtQty(i.counted_qty)}</td><td class="num ${i.difference < 0 ? 'text-red' : 'text-green'}">${i.difference > 0 ? '+' : ''}${fmtQty(i.difference)}</td></tr>`).join('')}</tbody></table>
         <p class="muted small">Soll = letzter bekannter Bestand beim Start der Zählung. Verbrauch seit der letzten Zählung erscheint als negative Differenz.</p>` : emptyState('Keine Differenzen zum letzten bekannten Bestand.', '✅')}</section>
@@ -189,7 +191,8 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
   function bindResult() {
     const ord = el.querySelector('#ord');
     if (!ord) return;
-    ord.addEventListener('input', () => { const v = parseNum(ord.value); if (v !== null && !Number.isNaN(v) && v >= 0) orderOverride = v; else if (ord.value.trim() === '') orderOverride = 0; });
+    const upo = orderText(1, cur).upo;
+    ord.addEventListener('input', () => { const v = parseNum(ord.value); if (v !== null && !Number.isNaN(v) && v >= 0) orderOverride = Math.round(v * upo * 1000) / 1000; else if (ord.value.trim() === '') orderOverride = 0; });
     ord.addEventListener('change', () => { if (cur.state === 'counted' && orderOverride !== null && parseNum(entry) === cur.counted_qty) save({ order_qty: orderOverride }, false); });
   }
 
@@ -221,8 +224,10 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
       else if (k === 'full') setEntry(fmtQty(cur.max_stock));
       else if (k === 'o-' || k === 'o+') {
         const o = el.querySelector('#ord');
-        const v = parseNum(o.value) || 0;
-        orderOverride = Math.max(0, Math.round((v + (k === 'o+' ? step : -step)) * 1000) / 1000);
+        const upo = orderText(1, cur).upo;
+        const v = (parseNum(o.value) || 0) * upo;
+        const st = cur.step > 0 ? cur.step : step;
+        orderOverride = Math.max(0, Math.round((v + (k === 'o+' ? st : -st)) * 1000) / 1000);
         refreshResult();
         if (cur.state === 'counted' && parseNum(entry) === cur.counted_qty) save({ order_qty: orderOverride }, false);
       } else if (k === 'skip') save({ skip: true }, true);

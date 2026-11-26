@@ -1,6 +1,6 @@
 // Einkaufslisten: Übersicht, Detail, Statusworkflow, Wareneingang, Druck & PDF, Historie.
 import { get, post, put, del } from '../api.js';
-import { esc, fmtQty, fmtEur, fmtDateTime, unitFor, parseNum, listBadge, LIST_STATUS, toast, modal, confirmDialog, debounce, matches, options, emptyState, download } from '../ui.js';
+import { orderText, esc, fmtQty, fmtEur, fmtDateTime, unitFor, parseNum, listBadge, LIST_STATUS, toast, modal, confirmDialog, debounce, matches, options, emptyState, download } from '../ui.js';
 import { navigate } from '../app.js';
 import { newListWizard } from './newlist.js';
 
@@ -127,7 +127,7 @@ async function renderDetail(el, { can, setTitle, setActions }, id) {
           <td><strong>${esc(i.article_name)}</strong><br><small class="muted">${esc([i.article_no, i.pack_size].filter(Boolean).join(' · '))}</small>
             ${i.note ? `<div class="note-text">„${esc(i.note)}“</div>` : ''}${!i.article_active ? '<div class="text-red small">Artikel inaktiv</div>' : ''}</td>
           <td class="num">${ed ? `<div class="stepper stepper-sm"><button data-i="qty-">−</button><input data-i="qty" inputmode="decimal" value="${fmtQty(i.qty)}"><button data-i="qty+">+</button></div>` : `<strong>${fmtQty(i.qty)}</strong>`}
-            <small>${esc(unitFor(i.qty, i.unit_name, i.unit_plural))}</small></td>
+            <small>${esc(unitFor(i.qty, i.unit_name, i.unit_plural))}</small>${orderText(i.qty, i).base ? `<div class="small text-blue"><b>${esc(orderText(i.qty, i).main)}</b></div>` : ''}</td>
           <td>${ed ? `<select data-i="supplier">${options(suppliers.filter((s) => s.active || s.id === i.supplier_id), i.supplier_id, { empty: 'Ohne Lieferant' })}</select>` : esc(i.supplier_name || '–')}</td>
           <td>${esc(i.location_name || '–')}</td>
           <td class="num">${ed && can('prices.manage') ? `<input class="input-sm num" data-i="price" inputmode="decimal" value="${Number(i.unit_price_est).toFixed(2).replace('.', ',')}">` : fmtEur(i.unit_price_est)}</td>
@@ -234,7 +234,7 @@ async function renderDetail(el, { can, setTitle, setActions }, id) {
           if (n !== null) reload(await put(`/api/lists/${id}/items/${itemId}`, { note: n }));
         } else if (b.dataset.i === 'qty-' || b.dataset.i === 'qty+') {
           const inp = tr.querySelector('[data-i="qty"]');
-          const step = item.order_step > 0 ? item.order_step : 1;
+          const step = item.units_per_order > 1 && item.order_unit_name ? item.units_per_order : (item.order_step > 0 ? item.order_step : 1);
           const cur = parseNum(inp.value) || 0;
           const next = Math.round((cur + (b.dataset.i === 'qty+' ? step : -step)) * 1000) / 1000;
           if (next <= 0) { toast('Menge muss größer 0 sein – zum Entfernen 🗑 verwenden.', 'warn'); return; }

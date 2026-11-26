@@ -3,7 +3,7 @@
 const { notFound, unprocessable } = require('../http/core');
 const v = require('../http/validate');
 const { loadArticles } = require('../services/articles');
-const { allowedMaxQty, round3 } = require('../services/stock');
+const { allowedMaxQty, round3, stepOf } = require('../services/stock');
 const L = require('../services/lists');
 const { audit } = require('../services/audit');
 
@@ -20,7 +20,7 @@ function decorate(db, a, draftId, itemsByArticle) {
     id: a.id, article_no: a.article_no, name: a.name, category_id: a.category_id, category_name: a.category_name, category_sort: a.category_sort,
     supplier_id: a.supplier_id, supplier_name: a.supplier_name, location_id: a.location_id, location_name: a.location_name, location_sort: a.location_sort,
     pack_size: a.pack_size, unit_name: a.unit_name, unit_plural: a.unit_plural, manufacturer: a.manufacturer,
-    min_stock: a.min_stock, max_stock: a.max_stock, current_stock: a.current_stock, order_step: a.order_step, min_order_qty: a.min_order_qty,
+    min_stock: a.min_stock, max_stock: a.max_stock, current_stock: a.current_stock, order_step: a.order_step, min_order_qty: a.min_order_qty, step: stepOf(a), units_per_order: a.units_per_order, order_unit_name: a.order_unit_name, order_unit_plural: a.order_unit_plural,
     stock_checked_at: a.stock_checked_at, stock_checked_by_name: a.stock_checked_by_name, check_result: a.check_result, check_note: a.check_note,
     unavailable_since: a.unavailable_since, price_net: a.price_net, has_image: a.has_image, sort_order: a.sort_order,
     status: a.status,

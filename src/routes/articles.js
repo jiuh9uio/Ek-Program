@@ -5,7 +5,7 @@ const { audit, diff } = require('../services/audit');
 const { loadArticles, loadArticle } = require('../services/articles');
 const { round3 } = require('../services/stock');
 
-const BASE_FIELDS = ['article_no', 'name', 'category_id', 'manufacturer', 'supplier_id', 'location_id', 'pack_size', 'unit_id', 'min_order_qty', 'order_step', 'notes', 'active', 'sort_order'];
+const BASE_FIELDS = ['article_no', 'name', 'category_id', 'manufacturer', 'supplier_id', 'location_id', 'pack_size', 'unit_id', 'order_unit_id', 'units_per_order', 'min_order_qty', 'order_step', 'notes', 'active', 'sort_order'];
 const MINMAX_FIELDS = ['min_stock', 'max_stock'];
 const PRICE_FIELDS = ['price_net'];
 const ALL_FIELDS = [...BASE_FIELDS, ...MINMAX_FIELDS, ...PRICE_FIELDS];
@@ -26,6 +26,8 @@ function articleInput(db, body, before) {
     location_id: refCheck(db, 'locations', v.id(src.location_id, 'location_id', { label: 'Lagerort' }), 'Lagerort'),
     pack_size: v.optStr(src.pack_size, 'pack_size', { max: 60, label: 'Gebindegröße' }),
     unit_id: refCheck(db, 'units', v.id(src.unit_id, 'unit_id', { label: 'Mengeneinheit' }), 'Mengeneinheit'),
+    order_unit_id: refCheck(db, 'units', v.id(src.order_unit_id, 'order_unit_id', { label: 'Bestelleinheit' }), 'Bestelleinheit'),
+    units_per_order: v.num(src.units_per_order === undefined || src.units_per_order === '' || src.units_per_order === null ? 1 : src.units_per_order, 'units_per_order', { min: 0.001, max: 1e5, label: 'Inhalt je Bestelleinheit' }),
     price_net: v.num(src.price_net, 'price_net', { min: 0, max: 1e6, label: 'Einkaufspreis netto' }),
     min_stock: v.num(src.min_stock, 'min_stock', { min: 0, max: 1e6, label: 'Mindestbestand' }),
     max_stock: v.num(src.max_stock, 'max_stock', { min: 0, max: 1e6, label: 'Maximalbestand' }),
@@ -45,7 +47,7 @@ function enforceFieldPerms(ctx, input, before) {
   const check = (fields, perm, what) => {
     if (can(perm)) return;
     for (const f of fields) {
-      const old = before ? before[f] : (f === 'order_step' ? 1 : f === 'active' ? 1 : f.endsWith('_id') || ['manufacturer', 'pack_size', 'notes'].includes(f) ? null : 0);
+      const old = before ? before[f] : (['order_step', 'units_per_order', 'active'].includes(f) ? 1 : f.endsWith('_id') || ['manufacturer', 'pack_size', 'notes'].includes(f) ? null : 0);
       if (String(input[f] ?? '') !== String(old ?? '')) throw forbidden(`Keine Berechtigung, ${what} zu ändern.`);
     }
   };
@@ -57,7 +59,7 @@ function enforceFieldPerms(ctx, input, before) {
 // ---------- CSV ----------
 const CSV_COLS = [
   ['article_no', 'Artikelnummer'], ['name', 'Artikelname'], ['category', 'Kategorie'], ['manufacturer', 'Hersteller'],
-  ['supplier', 'Lieferant'], ['location', 'Lagerort'], ['pack_size', 'Gebindegröße'], ['unit', 'Mengeneinheit'],
+  ['supplier', 'Lieferant'], ['location', 'Lagerort'], ['pack_size', 'Gebindegröße'], ['unit', 'Mengeneinheit'], ['order_unit', 'Bestelleinheit'], ['units_per_order', 'Inhalt je Bestelleinheit'],
   ['price_net', 'EK netto'], ['min_stock', 'MIN'], ['max_stock', 'MAX'], ['current_stock', 'Ist-Bestand'],
   ['min_order_qty', 'Mindestbestellmenge'], ['order_step', 'Gebindeschritt'], ['notes', 'Bemerkungen'], ['active', 'Aktiv'],
 ];
@@ -94,7 +96,7 @@ module.exports = function register(router) {
     const rows = loadArticles(db, { includeArchived: false });
     const lines = [CSV_COLS.map((c) => c[1]).join(';')];
     for (const a of rows) {
-      const m = { ...a, category: a.category_name, supplier: a.supplier_name, location: a.location_name, unit: a.unit_name, active: a.active ? 'ja' : 'nein' };
+      const m = { ...a, category: a.category_name, supplier: a.supplier_name, location: a.location_name, unit: a.unit_name, order_unit: a.order_unit_name, active: a.active ? 'ja' : 'nein' };
       lines.push(CSV_COLS.map(([k]) => csvCell(m[k])).join(';'));
     }
     return new RawResponse('﻿' + lines.join('\r\n'), 'text/csv; charset=utf-8', `artikel_${new Date().toISOString().slice(0, 10)}.csv`);
@@ -128,7 +130,7 @@ module.exports = function register(router) {
             const no = get('article_no');
             const before = db.get("SELECT * FROM articles WHERE department = 'service' AND article_no = ?", no);
             const body2 = {};
-            for (const k of ['article_no', 'name', 'manufacturer', 'pack_size', 'price_net', 'min_stock', 'max_stock', 'min_order_qty', 'order_step', 'notes']) {
+            for (const k of ['article_no', 'name', 'manufacturer', 'pack_size', 'price_net', 'min_stock', 'max_stock', 'min_order_qty', 'order_step', 'units_per_order', 'notes']) {
               const val = get(k); if (val !== undefined) body2[k] = val.replace(/^'/, '');
             }
             if (get('active') !== undefined) body2.active = !/^(nein|no|0|false|inaktiv)$/i.test(get('active'));
@@ -136,6 +138,7 @@ module.exports = function register(router) {
             if (get('supplier') !== undefined) body2.supplier_id = lookup('suppliers', get('supplier'));
             if (get('location') !== undefined) body2.location_id = lookup('locations', get('location'), "AND department = 'service'");
             if (get('unit') !== undefined) body2.unit_id = lookup('units', get('unit'));
+            if (get('order_unit') !== undefined) body2.order_unit_id = get('order_unit') ? lookup('units', get('order_unit')) : null;
             const a = articleInput(db, body2, before);
             enforceFieldPerms({ can }, a, before);
             const t = new Date().toISOString();
@@ -152,6 +155,25 @@ module.exports = function register(router) {
     });
     audit(db, user, 'Artikel importiert (CSV)', 'article', null, { neu: created, aktualisiert: updated, fehler: errors.length });
     return { created, updated, errors };
+  });
+
+  // Eingefügte Tabelle (z. B. von Claude berechnete MIN/MAX) – erst Vorschau, dann übernehmen
+  router.post('/api/articles/paste-import', { perm: ['articles.manage', 'minmax.manage'] }, ({ db, user, body, can }) => {
+    if (typeof body.text !== 'string' || !body.text.trim()) throw unprocessable('Bitte eine Tabelle einfügen.');
+    if (body.text.length > 2_000_000) throw unprocessable('Die Tabelle ist zu groß.');
+    const { importTable } = require('../services/tableimport');
+    return importTable(db, user, can, body.text, { dryRun: body.apply !== true, createNew: body.create_new !== false && can('articles.manage') });
+  });
+
+  // Vorlage/Anfrage für Claude: aktuelle Artikel als Markdown-Tabelle
+  router.get('/api/articles/claude-template', { perm: ['articles.manage', 'minmax.manage'] }, ({ db, query }) => {
+    let rows = loadArticles(db, { includeInactive: false });
+    if (query.supplier_id) rows = rows.filter((a) => String(a.supplier_id) === String(query.supplier_id));
+    const esc = (s) => String(s ?? '').replace(/\|/g, '/');
+    const head = '| Artikelnummer | Artikelname | Lieferant | Kategorie | Lagerort | Zähleinheit | Bestelleinheit | Inhalt je Bestelleinheit | MIN | MAX | EK netto |';
+    const sep = '|---|---|---|---|---|---|---|---|---|---|---|';
+    const lines = rows.map((a) => `| ${esc(a.article_no)} | ${esc(a.name)} | ${esc(a.supplier_name)} | ${esc(a.category_name)} | ${esc(a.location_name)} | ${esc(a.unit_plural || a.unit_name)} | ${esc(a.order_unit_name)} | ${a.units_per_order > 1 ? String(a.units_per_order).replace('.', ',') : ''} | ${String(a.min_stock).replace('.', ',')} | ${String(a.max_stock).replace('.', ',')} | ${String(a.price_net).replace('.', ',')} |`);
+    return { markdown: [head, sep, ...lines].join('\n'), count: rows.length };
   });
 
   router.get('/api/articles/:id', {}, ({ db, params }) => {
@@ -269,3 +291,7 @@ module.exports = function register(router) {
     return loadArticle(db, a.id);
   });
 };
+
+module.exports.articleInput = articleInput;
+module.exports.enforceFieldPerms = enforceFieldPerms;
+module.exports.ALL_FIELDS = ALL_FIELDS;

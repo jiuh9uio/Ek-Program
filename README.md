@@ -43,7 +43,7 @@ Ist der Ordner neben der EXE nicht beschreibbar, wird stattdessen `%LOCALAPPDATA
 
 Der Ablauf funktioniert wie in Inventursystemen großer Firmen:
 
-1. **„+ Neue Einkaufsliste“** antippen (Dashboard, Einkaufslisten oder Bestandszählungen) und **„Mit Bestandszählung“** wählen. Optional lassen sich Lagerorte und Kategorien eingrenzen.
+1. **„+ Neue Einkaufsliste“** antippen (Dashboard, Einkaufslisten oder Bestandszählungen), **„Mit Bestandszählung“** wählen und bei **„Wo kaufst du ein?“** den Lieferanten bzw. Einkaufsort antippen, z. B. *Großmarkt*. Dann werden nur dessen Artikel abgefragt. Lagerorte und Kategorien lassen sich zusätzlich eingrenzen.
 2. Das System legt einen **Zählbeleg** (z. B. `INV-00001`) und eine leere **Einkaufsliste** (z. B. `EK-00002`) an.
 3. Es führt dich in Laufwegreihenfolge Artikel für Artikel durchs Lager: *„Coca-Cola 0,2 l – Wie viele Kästen sind noch da?“*
 4. Du tippst die Menge über den großen Ziffernblock ein, z. B. **2**. Das System zeigt sofort: **„🛒 Nachkaufen: 8 Kästen (auffüllen bis MAX 10)“**.
@@ -55,6 +55,21 @@ Der Ablauf funktioniert wie in Inventursystemen großer Firmen:
 6. Am Ende zeigt die Übersicht den Bestellvorschlag und die **Soll/Ist-Differenzen** zur letzten Zählung (Verbrauch/Schwund). Von dort geht es direkt zur Einkaufsliste mit Bondruck, PDF und Freigabe.
 
 Mit Tastatur geht es noch schneller: Zahl tippen und *Enter* drücken. Alle Zählbelege bleiben unter **Bestandszählungen** nachvollziehbar und lassen sich als CSV exportieren.
+
+## MIN/MAX von Claude berechnen lassen und per Tabelle einfügen
+
+1. **Artikel → „📋 Tabelle einfügen (MIN/MAX)“** öffnen.
+2. **„Anfrage für Claude kopieren“** antippen, optional nur für einen Lieferanten. Kopiert wird eine fertige Anfrage mit deinen aktuellen Artikeln als Tabelle.
+3. Die Anfrage in Claude einfügen und kurz den Betrieb beschreiben (Öffnungstage, Gäste pro Woche, wie oft eingekauft wird, Verbrauch). Claude antwortet mit einer Tabelle mit MIN, MAX, Bestelleinheit (z. B. Karton à 6) usw.
+4. Die Antwort-Tabelle in das Feld einfügen. Mitkopierter Text vor oder nach der Tabelle stört nicht. Es funktionieren auch Tabellen aus Excel und CSV.
+5. **Vorschau**: Für jeden Artikel siehst du, was sich ändert (z. B. „MIN 2 → 3, MAX 6 → 12“), welche Artikel neu angelegt werden und welche Zeilen Fehler haben.
+6. **Übernehmen**. Ab jetzt nutzt jede Bestandszählung diese Werte.
+
+Spalten werden über ihren Namen erkannt, z. B. *Artikel/Bezeichnung*, *MIN/Mindestbestand*, *MAX/Zielbestand*, *Lieferant/Einkaufsort*, *Bestelleinheit*, *Inhalt je Bestelleinheit/Stück pro Karton*, *EK netto*. Artikel werden über die Artikelnummer gefunden, sonst über den Namen. Leere Zellen ändern nichts.
+
+## Bestelleinheiten (zählen in Flaschen, bestellen in Kartons)
+
+Pro Artikel lassen sich eine **Bestelleinheit** und ihr **Inhalt** hinterlegen, z. B. *Karton à 6 Flaschen*. Gezählt wird weiter in Flaschen. Vorgeschlagen werden aber immer ganze Kartons: *„Nachkaufen: 2 Kartons (= 12 Flaschen)“*. Mit −/+ änderst du die Menge kartonweise oder trägst sie selbst ein. Bon und PDF drucken „2 Kartons“, darunter „= 12 Flaschen“.
 
 ## Funktionen
 
@@ -155,7 +170,7 @@ scripts/build-exe.js   EXE-Erstellung
 ```bash
 npm install
 npm start                 # http://localhost:8080
-npm test                  # 37 Tests: Berechnungen, Bestandsbuchungen, Rechte, Druck (simulierte Drucker), PDF, Sicherung
+npm test                  # 42 Tests: Berechnungen, Bestandsbuchungen, Rechte, Druck (simulierte Drucker), PDF, Sicherung
 npm run build:exe         # → dist/EK-Service.exe (Windows x64, baubar unter Windows/Linux/macOS)
 ```
 

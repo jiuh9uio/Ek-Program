@@ -11,7 +11,7 @@
  */
 const { notFound, unprocessable, conflict } = require('../http/core');
 const { loadArticles } = require('./articles');
-const { round3 } = require('./stock');
+const { round3, stepOf } = require('./stock');
 const L = require('./lists');
 const { audit } = require('./audit');
 
@@ -34,7 +34,8 @@ function createCount(db, user, opts = {}) {
       || a.sort_order - b.sort_order || a.name.localeCompare(b.name, 'de'));
 
     const d = new Date();
-    const title = opts.title || `Einkauf ${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
+    const supName = sup.length === 1 ? (db.get('SELECT name FROM suppliers WHERE id = ?', sup[0]) || {}).name : null;
+    const title = opts.title || `Einkauf ${supName ? supName + ' ' : ''}${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
     const listId = L.createList(db, user, { department, title, note: opts.note || null });
     const n = db.nextNumber(`count_${department}`);
     const number = `INV-${String(n).padStart(5, '0')}`;
@@ -75,6 +76,7 @@ function loadCount(db, id) {
       name: a.name, article_no: a.article_no, pack_size: a.pack_size, unit_name: a.unit_name, unit_plural: a.unit_plural,
       location_name: a.location_name, category_name: a.category_name, supplier_name: a.supplier_name, manufacturer: a.manufacturer,
       min_stock: a.min_stock, max_stock: a.max_stock, order_step: a.order_step, min_order_qty: a.min_order_qty, price_net: a.price_net,
+      step: stepOf(a), units_per_order: a.units_per_order || 1, order_unit_name: a.order_unit_name, order_unit_plural: a.order_unit_plural,
       current_stock: a.current_stock, has_image: a.has_image, unavailable_since: a.unavailable_since, active: a.active,
       recommended: a.recommended, on_order: a.on_order, open_lists: a.open_lists, status: a.status,
       order: pi ? { item_id: pi.id, qty: pi.qty, source: pi.source, note: pi.note } : null,

@@ -187,9 +187,12 @@ function listPdf(list, { company = '', groupBy = 'supplier', userName = '', show
       const h = Math.max(18, 12 + noteLines.length * 9);
       ensure(h);
       let x = M;
-      const unit = Math.abs(i.qty - 1) < 1e-9 ? i.unit_name : (i.unit_plural || i.unit_name);
+      const upo = Number(i.units_per_order) || 1;
+      const inOrder = upo > 1 && i.order_unit_name;
+      const q = inOrder ? Math.round((i.qty / upo) * 1000) / 1000 : i.qty;
+      const unit = inOrder ? (Math.abs(q - 1) < 1e-9 ? i.order_unit_name : (i.order_unit_plural || i.order_unit_name)) + ` (${qtyFmt(i.qty)})` : (Math.abs(i.qty - 1) < 1e-9 ? i.unit_name : (i.unit_plural || i.unit_name));
       const vals = {
-        name: i.article_name, qty: qtyFmt(i.qty), unit: unit || '', pack: i.pack_size || '', supplier: i.supplier_name || '',
+        name: i.article_name, qty: qtyFmt(q), unit: unit || '', pack: i.pack_size || '', supplier: i.supplier_name || '',
         location: i.location_name || '', price: eur(i.unit_price_est), total: eur(i.est_total), note: '',
       };
       for (const c of cols) {
