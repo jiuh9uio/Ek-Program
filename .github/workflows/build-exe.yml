@@ -8,6 +8,7 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -67,8 +68,14 @@ jobs:
           $second = Start-Process -FilePath "dist\EK-Service.exe" -ArgumentList '--no-browser','--port','18121' -PassThru
           if (-not $second.WaitForExit(15000)) { throw 'Zweite Instanz beendet sich nicht' }
           Write-Host "Zweiter Start: keine zweite Kopie (Exit $($second.ExitCode))"
-          # Fenster simulieren: Verbindung 5 s offen, dann schließen
-          try { Invoke-WebRequest http://127.0.0.1:18121/api/presence -TimeoutSec 5 -UseBasicParsing | Out-Null } catch {}
+          # Fenster simulieren: Anwesenheits-Verbindung 5 s offen halten, dann schließen
+          $c = New-Object System.Net.Sockets.TcpClient('127.0.0.1', 18121)
+          $st = $c.GetStream()
+          $req = [Text.Encoding]::ASCII.GetBytes("GET /api/presence HTTP/1.1`r`nHost: 127.0.0.1`r`n`r`n")
+          $st.Write($req, 0, $req.Length)
+          Start-Sleep 5
+          $c.Close()
+          Write-Host 'Fenster geschlossen – warte auf automatisches Beenden …'
           if (-not $p.WaitForExit(45000)) { Stop-Process -Id $p.Id; throw 'Programm hat sich nach dem Schließen nicht beendet' }
           if (Test-Path "$env:EK_DATA_DIR\laeuft.json") { throw 'Laufzeitdatei wurde nicht aufgeräumt' }
           Get-Content "$env:EK_DATA_DIR\logs\ek-service.log"
