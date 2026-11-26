@@ -102,7 +102,9 @@ function Get-NewExe([string]$file, [string]$work) {
   if ($sig -eq 'PK') {
     Say '  Entpacke ZIP …'
     $x = Join-Path $work 'zip'
-    Expand-Archive -Path $file -DestinationPath $x -Force
+    New-Item -ItemType Directory -Force -Path $x | Out-Null
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [IO.Compression.ZipFile]::ExtractToDirectory($file, $x)
     $found = Get-ChildItem -Path $x -Recurse -Filter '*.exe' | Where-Object { $_.Name -like 'EK-Service*.exe' } | Select-Object -First 1
     if (-not $found) { throw 'In der ZIP-Datei ist keine EK-Service.exe enthalten.' }
     $script:NewDocs = Get-ChildItem -Path $x -Recurse -Include 'ANLEITUNG.md', 'EK-Service-Update.bat' -ErrorAction SilentlyContinue
