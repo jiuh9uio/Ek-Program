@@ -3,6 +3,7 @@ import { get, post } from '../api.js';
 import { esc, toast, modal, options, matches, parseNum, norm } from '../ui.js';
 import { can } from '../app.js';
 import { sound, haptic } from '../reward.js';
+import { searchCatalog } from '../catalog.js';
 
 let cache = null;
 async function refs() {
@@ -48,7 +49,17 @@ export async function extraDialog(listId, { supplierId = null, title = '✍️ S
     f.name.addEventListener('input', () => {
       const q = f.name.value.trim();
       const hits = q.length >= 3 ? arts.filter((a) => matches(`${a.name} ${a.article_no}`, q)).slice(0, 4) : [];
-      sug.innerHTML = hits.length ? `<div class="hint">Gibt es schon als Artikel: ${hits.map((a) => `<button type="button" class="chip" data-art="${a.id}">${esc(a.name)}</button>`).join(' ')} – antippen, um den vorhandenen Artikel zu bestellen.</div>` : '';
+      const cat = q.length >= 3 && !hits.length ? searchCatalog(q, 4) : [];
+      sug.innerHTML = (hits.length ? `<div class="hint">Gibt es schon als Artikel: ${hits.map((a) => `<button type="button" class="chip" data-art="${a.id}">${esc(a.name)}</button>`).join(' ')} – antippen, um den vorhandenen Artikel zu bestellen.</div>` : '')
+        + (cat.length ? `<div class="hint">Aus dem Produktkatalog: ${cat.map((e, i) => `<button type="button" class="chip" data-cat="${i}">${esc(e.name)}</button>`).join(' ')}</div>` : '');
+      sug.querySelectorAll('[data-cat]').forEach((b) => b.addEventListener('click', () => {
+        const e = cat[Number(b.dataset.cat)];
+        f.name.value = e.name;
+        const u = units.find((x) => x.name === e.unit);
+        f.unit.value = u ? u.plural : e.unit;
+        sug.innerHTML = '';
+        f.qty.focus(); f.qty.select();
+      }));
       sug.querySelectorAll('[data-art]').forEach((b) => b.addEventListener('click', async () => {
         const a = arts.find((x) => x.id === Number(b.dataset.art));
         const qty = parseNum(f.qty.value) || 1;

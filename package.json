@@ -1,6 +1,6 @@
 {
   "name": "ek-service",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "EK-Management Service – Einkaufs- und Bestandsmanagement für den Servicebereich (Hotel/Restaurant)",
   "main": "src/main.js",
   "private": true,

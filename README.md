@@ -80,6 +80,17 @@ Der Ablauf funktioniert wie in Inventursystemen großer Firmen:
 
 Mit Tastatur geht es noch schneller: Zahl tippen und *Enter* drücken. Alle Zählbelege bleiben unter **Bestandszählungen** nachvollziehbar und lassen sich als CSV exportieren.
 
+## Artikel anlegen mit Produktkatalog
+
+Beim Anlegen eines Artikels einfach den Namen tippen, z. B. „cola“, „augustiner“ oder „monin vanille“. Der **eingebaute Produktkatalog** zeigt passende Vorschläge mit Größe und Gebinde, z. B. *Coca-Cola 1,0 l · Flasche · Kasten à 12*.
+
+- Ein Tipp füllt **Name, Hersteller, Kategorie, Größe und Zähleinheit (Flasche, Dose, Fass …)** aus und wählt die typische **Bestelleinheit (Kasten/Karton)** vor.
+- Unter **„📦 Wie wird bestellt?“** lässt sich jederzeit umschalten: *einzeln* oder *Kasten à 24/20/12*, *Karton à 6/12/24* bzw. *anders …*. Damit schlägt die Zählung später ganze Kästen statt einzelner Flaschen vor.
+- Gibt es den Artikel schon, warnt das Programm vor einer Doppelanlage. Die Artikelnummer wird automatisch vergeben, wenn das Feld leer bleibt.
+- Der Katalog funktioniert offline und enthält über 250 typische Service-Artikel: Softdrinks, Wasser, Säfte, Bier, Wein, Sekt, Spirituosen, Liköre, Sirups, Cocktailzutaten, Kaffee/Tee, Verbrauchsmaterial und Reinigung.
+- Er enthält **typische Gebinde, aber bewusst keine Preise und keine EAN-Nummern**. Bitte mit dem eigenen Lieferanten abgleichen.
+- Auch beim Sonderwunsch schlägt der Katalog Name und Einheit vor.
+
 ## MIN/MAX von Claude berechnen lassen und per Tabelle einfügen
 
 1. **Artikel → „📋 Tabelle einfügen (MIN/MAX)“** öffnen.
@@ -249,7 +260,7 @@ scripts/build-exe.js   EXE-Erstellung
 ```bash
 npm install
 npm start                 # http://localhost:8080
-npm test                  # 60 Tests: Berechnungen, Bestandsbuchungen, Rechte, Druck (simulierte Drucker), PDF, Sicherung
+npm test                  # 62 Tests: Berechnungen, Bestandsbuchungen, Rechte, Druck (simulierte Drucker), PDF, Sicherung
 npm run build:exe         # → dist/EK-Service.exe (Windows x64, Fensterprogramm mit Symbol; --console für Konsolenversion; baubar unter Windows/Linux/macOS)
 node scripts/make-icon.js # Programmsymbol assets/icon.ico aus assets/icon.svg neu erzeugen (benötigt Playwright)
 ```

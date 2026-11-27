@@ -3,6 +3,7 @@ import { get, post, put, del } from '../api.js';
 import { pushScanHandler } from '../scanner.js';
 import { assignCodeDialog } from './scanhelp.js';
 import { svg as barcodeSvg } from '../code128.js';
+import { searchCatalog, describe as describeCat, COMMON_ORDERS } from '../catalog.js';
 import { esc, fmtQty, fmtEur, fmtDateTime, statusBadge, STATUS, toast, modal, confirmDialog, debounce, matches, options, parseNum, emptyState, download, formData } from '../ui.js';
 
 export async function render(el, { can, setActions }) {
@@ -108,8 +109,9 @@ export async function render(el, { can, setActions }) {
     const m = modal({
       title: id ? `Artikel: ${a.name}` : 'Neuer Artikel', wide: true,
       body: `<form id="af" class="form-grid form-2col">
-        <label class="field"><span>Artikelname *</span><input name="name" value="${esc(a.name || '')}" required ${dis(ro)}></label>
-        <label class="field"><span>Artikelnummer *</span><input name="article_no" value="${esc(a.article_no || '')}" required ${dis(ro)}></label>
+        <div class="field cat-wrap"><span>Artikelname * ${ro ? '' : '<small class="muted">– tippen für Vorschläge aus dem Produktkatalog</small>'}</span><input name="name" value="${esc(a.name || '')}" required autocomplete="off" ${dis(ro)}>
+          <div class="cat-sug" id="cat-sug" hidden></div></div>
+        <label class="field"><span>Artikelnummer <small class="muted">(leer = automatisch)</small></span><input name="article_no" value="${esc(a.article_no || '')}" placeholder="z. B. AFG-001" ${dis(ro)}></label>
         <label class="field"><span>Kategorie</span><select name="category_id" ${dis(ro)}>${options(cats.filter((c) => c.active || c.id === a.category_id), a.category_id)}</select></label>
         <label class="field"><span>Hersteller</span><input name="manufacturer" value="${esc(a.manufacturer || '')}" ${dis(ro)}></label>
         <label class="field"><span>Lieferant</span><select name="supplier_id" ${dis(ro)}>${options(sups.filter((s) => s.active || s.id === a.supplier_id), a.supplier_id)}</select></label>
@@ -118,6 +120,7 @@ export async function render(el, { can, setActions }) {
         <label class="field"><span>Mengeneinheit (Zähleinheit)</span><select name="unit_id" ${dis(ro)}>${options(units, a.unit_id)}</select></label>
         <label class="field"><span>Bestelleinheit (optional, z. B. Karton)</span><select name="order_unit_id" ${dis(ro)}>${options(units, a.order_unit_id, { empty: '– wie Zähleinheit –' })}</select></label>
         <label class="field"><span>Inhalt je Bestelleinheit (in Zähleinheiten)</span><input name="units_per_order" inputmode="decimal" value="${fmtNum(a.units_per_order ?? 1)}" ${dis(ro)}></label>
+        ${ro ? '' : '<div class="field span2 order-how"><span>📦 Wie wird bestellt?</span><div class="chips" id="order-chips"></div></div>'}
         <label class="field"><span>Einkaufspreis netto (€ je Einheit)</span><input name="price_net" inputmode="decimal" value="${fmtNum(a.price_net)}" ${dis(roP)}></label>
         <label class="field"><span>Mindestbestellmenge</span><input name="min_order_qty" inputmode="decimal" value="${fmtNum(a.min_order_qty)}" ${dis(ro)}></label>
         <label class="field"><span>Mindestbestand (MIN)</span><input name="min_stock" inputmode="decimal" value="${fmtNum(a.min_stock)}" ${dis(roMM)}></label>
@@ -176,6 +179,75 @@ export async function render(el, { can, setActions }) {
       else h.textContent = 'Ohne MAX (> 0) wird keine automatische Bestellempfehlung erzeugt.';
     };
     form.addEventListener('input', hint); hint();
+
+    // ---------- Produktkatalog: Namen vervollständigen, Einheit & Kasten/Karton vorschlagen ----------
+    let catOrders = null; // Bestelloptionen des gewählten Katalogeintrags
+    const unitByName = (n) => units.find((u) => u.name === n || u.plural === n);
+    const ensureUnit = async (n) => {
+      let u = unitByName(n);
+      if (u) return u;
+      u = await post('/api/units', { name: n, plural: n });
+      units.push(u);
+      for (const sel of [form.unit_id, form.order_unit_id]) sel.insertAdjacentHTML('beforeend', `<option value="${u.id}">${esc(u.name)}</option>`);
+      return u;
+    };
+    const drawOrderChips = () => {
+      const box = m.body.querySelector('#order-chips');
+      if (!box) return;
+      const base = units.find((u) => String(u.id) === form.unit_id.value);
+      const baseName = base ? base.name : 'Zähleinheit';
+      const opts = [{ unit: null, per: 1 }, ...(catOrders && catOrders.length ? catOrders : COMMON_ORDERS)];
+      const curUnit = units.find((u) => String(u.id) === form.order_unit_id.value);
+      const curPer = parseNum(form.units_per_order.value) || 1;
+      const isOn = (o) => (o.unit === null ? !curUnit || curPer <= 1 : curUnit && curUnit.name === o.unit && Math.abs(curPer - o.per) < 1e-9);
+      box.innerHTML = opts.map((o, i) => `<button type="button" class="chip ${isOn(o) ? 'on' : ''}" data-ord="${i}">${o.unit === null ? `einzeln (${esc(baseName)})` : `${esc(o.unit)} à ${o.per}`}</button>`).join('')
+        + '<button type="button" class="chip" data-ord="custom">anders …</button>'
+        + `<small class="muted order-note">${catOrders && catOrders.length ? 'Typisches Gebinde laut Katalog – bitte mit dem Lieferanten abgleichen.' : 'Die Zählung schlägt dann ganze Kästen/Kartons vor.'}</small>`;
+      box.querySelectorAll('[data-ord]').forEach((b) => b.addEventListener('click', async () => {
+        if (b.dataset.ord === 'custom') { form.order_unit_id.focus(); return; }
+        const o = opts[Number(b.dataset.ord)];
+        if (o.unit === null) { form.order_unit_id.value = ''; form.units_per_order.value = '1'; } else {
+          const u = await ensureUnit(o.unit);
+          form.order_unit_id.value = String(u.id); form.units_per_order.value = String(o.per);
+        }
+        drawOrderChips(); hint();
+      }));
+    };
+    if (!ro) {
+      drawOrderChips();
+      ['unit_id', 'order_unit_id', 'units_per_order'].forEach((n) => form[n].addEventListener('change', drawOrderChips));
+      const sug = m.body.querySelector('#cat-sug');
+      const applyCat = async (e) => {
+        form.name.value = e.name;
+        if (!form.manufacturer.value && e.maker) form.manufacturer.value = e.maker;
+        if (!form.pack_size.value) form.pack_size.value = /^\d/.test(e.size) ? e.size : '';
+        const cat = cats.find((c) => c.name === e.category);
+        if (cat && (!id || !form.category_id.value)) form.category_id.value = String(cat.id);
+        const u = await ensureUnit(e.unit);
+        form.unit_id.value = String(u.id);
+        catOrders = e.orders;
+        if (e.orders.length) {
+          const ou = await ensureUnit(e.orders[0].unit);
+          form.order_unit_id.value = String(ou.id); form.units_per_order.value = String(e.orders[0].per);
+        } else { form.order_unit_id.value = ''; form.units_per_order.value = '1'; }
+        sug.hidden = true;
+        drawOrderChips(); hint();
+        toast(`Übernommen: ${e.name} – ${describeCat(e)}`, 'success');
+        form.min_stock.focus();
+      };
+      form.name.addEventListener('input', () => {
+        const q = form.name.value;
+        const hits = searchCatalog(q, 8);
+        const dup = arts.find((x) => x.id !== id && x.name.toLowerCase() === q.trim().toLowerCase());
+        if (!hits.length && !dup) { sug.hidden = true; return; }
+        sug.innerHTML = (dup ? `<div class="cat-dup">⚠ „${esc(dup.name)}“ gibt es schon als Artikel (${esc(dup.article_no)}).</div>` : '')
+          + hits.map((e, i) => `<button type="button" class="cat-item" data-cat="${i}"><strong>${esc(e.name)}</strong><small>${esc([e.maker, e.category].filter(Boolean).join(' · '))}</small><span class="cat-units">${esc(describeCat(e))}</span></button>`).join('');
+        sug.hidden = false;
+        sug.querySelectorAll('[data-cat]').forEach((b) => b.addEventListener('click', () => applyCat(hits[Number(b.dataset.cat)])));
+      });
+      form.name.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') sug.hidden = true; });
+      form.name.addEventListener('blur', () => setTimeout(() => { sug.hidden = true; }, 200));
+    }
     m.body.querySelector('#img-in')?.addEventListener('change', async (e) => {
       const file = e.target.files[0]; if (!file) return;
       try { image = await resizeImage(file, 480); const p = m.body.querySelector('#img-prev'); p.src = image; p.hidden = false; } catch { toast('Bild konnte nicht gelesen werden.', 'error'); }
