@@ -125,4 +125,34 @@ jobs:
           path: |
             dist/EK-Service.exe
             windows/EK-Service-Update.bat
-          retention-days: 30
+          retention-days: 14
+
+  # Speicher sparen (vom Nutzer gewünscht): nach erfolgreichem Build alle älteren Läufe
+  # samt EXE-Artefakten löschen. Es bleibt immer nur der neueste Build übrig.
+  aufraeumen:
+    needs: build-windows
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Ältere Builds und Artefakte löschen
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const keep = context.runId;
+            let artefakte = 0, laeufe = 0, mb = 0;
+            const arts = await github.paginate(github.rest.actions.listArtifactsForRepo, { owner, repo, per_page: 100 });
+            for (const a of arts) {
+              if (a.workflow_run && a.workflow_run.id === keep) continue;
+              await github.rest.actions.deleteArtifact({ owner, repo, artifact_id: a.id });
+              artefakte++; mb += a.size_in_bytes / 1048576;
+            }
+            const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, { owner, repo, per_page: 100 });
+            for (const r of runs) {
+              if (r.id === keep || r.status !== 'completed') continue;
+              await github.rest.actions.deleteWorkflowRun({ owner, repo, run_id: r.id });
+              laeufe++;
+            }
+            core.notice(`Aufgeräumt: ${laeufe} alte Läufe und ${artefakte} Artefakte (${mb.toFixed(0)} MB) gelöscht. Behalten: Lauf ${keep}.`);
