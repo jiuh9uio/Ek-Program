@@ -1,6 +1,6 @@
 {
   "name": "ek-service",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "EK-Service – Einkaufs- und Bestandsmanagement für den Servicebereich (Hotel/Restaurant)",
   "main": "electron/main.js",
   "private": true,

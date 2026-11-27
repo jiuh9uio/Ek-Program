@@ -103,10 +103,10 @@ export function modal({ title, body, actions = [], wide = false, onOpen, onClose
   return api;
 }
 
-export function confirmDialog(message, { title = 'Bitte bestätigen', ok = 'OK', danger = false } = {}) {
+export function confirmDialog(message, { title = 'Bitte bestätigen', ok = 'OK', danger = false, html = '' } = {}) {
   return new Promise((resolve) => {
     modal({
-      title, body: `<p class="confirm-text">${esc(message)}</p>`,
+      title, body: `<p class="confirm-text">${esc(message)}</p>${html}`,
       actions: [{ label: 'Abbrechen', value: false }, { label: ok, cls: danger ? 'btn-danger' : 'btn-primary', value: true }],
       onClose: (v) => resolve(!!v),
     });

@@ -13,10 +13,15 @@ const os = require('node:os');
 
 const ROOT = path.join(__dirname, '..');
 const ICON = path.join(ROOT, 'assets', 'icon.ico');
-const selftestFile = (() => { const i = process.argv.indexOf('--selbsttest'); return i > 0 ? process.argv[i + 1] : null; })();
+const argFile = (flag) => { const i = process.argv.indexOf(flag); return i > 0 ? process.argv[i + 1] : null; };
+const selftestFile = argFile('--selbsttest');
+const updateTestFile = argFile('--update-test'); // CI: Update prüfen + herunterladen, Ergebnis als JSON
+const { createUpdater } = require('./updater');
 
 let win = null;
 let core = null; // { db, server, port }
+const send = (msg) => { if (win && !win.isDestroyed()) win.webContents.send('ek:update', msg); };
+const updater = createUpdater({ dataDir: () => dataDir(), send });
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -227,9 +232,33 @@ function ensurePortableShortcuts() {
     .catch(() => {});
 }
 
+// Eingebauter Updater (holt die neueste Version selbst, kein Link nötig)
+ipcMain.handle('ek:updateCheck', async () => {
+  try { return { ok: true, ...(await updater.check()) }; } catch (e) { return { ok: false, error: e.message }; }
+});
+ipcMain.handle('ek:updateState', () => updater.state());
+ipcMain.handle('ek:updateInstall', async () => {
+  try {
+    return await updater.install((p) => send({ type: 'progress', ...p }));
+  } catch (e) { send({ type: 'error', error: e.message }); return { ok: false, error: e.message }; }
+});
+
+async function runUpdateTest(file) {
+  const out = {};
+  try {
+    out.check = await updater.check();
+    if (out.check.available) out.download = await updater.download(out.check, () => {});
+    out.ok = true;
+  } catch (e) { out.ok = false; out.error = e.message; }
+  fs.writeFileSync(file, JSON.stringify(out, null, 2));
+  app.quit();
+}
+
 async function start() {
   app.setAppUserModelId('de.ekservice.app');
+  if (updateTestFile) return runUpdateTest(updateTestFile);
   await startCore();
   createWindow();
   ensurePortableShortcuts();
+  if (!selftestFile && app.isPackaged) updater.startAuto();
 }

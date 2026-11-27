@@ -2,6 +2,7 @@
 import { get, post, setUnauthorizedHandler } from './api.js';
 import { esc, toast, modal } from './ui.js';
 import { enableScanner, setFallbackHandler } from './scanner.js';
+import { initUpdater, renderUpdateBanner } from './update.js';
 import { setUser, prefs as rwPrefs, setPrefs as rwSetPrefs, checkAchievements, sound } from './reward.js';
 
 const VIEWS = {
@@ -28,6 +29,7 @@ let currentView = null;
 setUnauthorizedHandler(() => { if (state.user) { state.user = null; toast('Sitzung abgelaufen – bitte erneut anmelden.', 'error'); renderLogin(); } });
 
 async function boot() {
+  initUpdater();
   try {
     const me = await get('/api/auth/me', { quiet: true });
     applyMe(me);
@@ -121,6 +123,7 @@ function renderShell() {
           <div class="topbar-actions" id="topbar-actions"></div>
         </header>
         ${state.defaultAdminPassword ? '<div class="banner banner-warn">Sicherheitshinweis: Das Standardpasswort „admin“ ist noch aktiv. Bitte über das Benutzermenü (unten links) ändern.</div>' : ''}
+        <div id="update-slot"></div>
         <main id="view" class="view"></main>
       </div>
       <nav class="bottom-nav">${nav.filter(([k]) => ['dashboard', 'mode', 'lists', 'articles'].includes(k)).map(([k, v]) => `<a href="#/${k}" data-view="${k}"><span>${v.icon}</span><small>${esc(v.label)}</small></a>`).join('')}<button type="button" id="more-btn"><span>⋯</span><small>Mehr</small></button></nav>
@@ -131,6 +134,7 @@ function renderShell() {
   sidebar.addEventListener('click', (e) => { if (e.target.closest('a')) sidebar.classList.remove('open'); });
   app.querySelector('#user-menu').addEventListener('click', userMenu);
   window.onhashchange = route;
+  renderUpdateBanner();
   route();
 }
 

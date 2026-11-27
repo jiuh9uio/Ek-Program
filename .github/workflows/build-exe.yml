@@ -9,6 +9,8 @@ jobs:
   build-windows:
     runs-on: windows-latest
     timeout-minutes: 30
+    permissions:
+      contents: write
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
@@ -18,8 +20,16 @@ jobs:
           node-version: '22'
       - name: Abhängigkeiten installieren
         run: npm ci
-      - name: Tests (Berechnungen, Bestand, Rechte, Druck, Sicherung)
+      - name: Tests (Berechnungen, Bestand, Rechte, Druck, Sicherung, Updater)
         run: npm test
+      - name: Versionsnummer festlegen (fortlaufend je Build)
+        shell: pwsh
+        run: |
+          $base = (node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
+          $v = "$base.${{ github.run_number }}"
+          npm version $v --no-git-tag-version --allow-same-version | Out-Null
+          "EK_VERSION=$v" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          Write-Host "Version: $v"
 
       - name: Installer bauen (EK-Service-Setup.exe)
         run: npx electron-builder --win nsis --x64 --publish never
@@ -82,6 +92,31 @@ jobs:
           if (-not (Test-Path "$x\EK-Service\EK-Service-Update.bat")) { throw 'Update-Datei fehlt im ZIP' }
           Write-Host 'Programmordner OK.'
 
+      - name: Eingebauten Updater prüfen (Suchen, Herunterladen, Prüfsumme)
+        shell: pwsh
+        run: |
+          $www = "$env:RUNNER_TEMP\upd-www"
+          New-Item -ItemType Directory -Force $www | Out-Null
+          $zip = Get-ChildItem dist-app\EK-Service-Programm-*.zip | Select-Object -First 1
+          Copy-Item $zip.FullName "$www\EK-Service-Programm-99.0.0.zip"
+          $sha = (Get-FileHash "$www\EK-Service-Programm-99.0.0.zip" -Algorithm SHA256).Hash.ToLower()
+          @{ tag_name = 'v99.0.0'; body = 'Test'; assets = @(@{ name = 'EK-Service-Programm-99.0.0.zip'; browser_download_url = 'http://127.0.0.1:18150/EK-Service-Programm-99.0.0.zip'; size = $zip.Length; digest = "sha256:$sha" }) } | ConvertTo-Json -Depth 5 | Set-Content "$www\latest.json" -Encoding UTF8
+          $web = Start-Process python -ArgumentList '-m', 'http.server', '18150', '--bind', '127.0.0.1', '--directory', $www -PassThru -WindowStyle Hidden
+          $up = $false
+          for ($i = 0; $i -lt 30 -and -not $up; $i++) { Start-Sleep 1; try { Invoke-WebRequest http://127.0.0.1:18150/latest.json -UseBasicParsing -TimeoutSec 2 | Out-Null; $up = $true } catch {} }
+          if (-not $up) { throw 'Test-Webserver startet nicht' }
+          $env:EK_UPDATE_URL = 'http://127.0.0.1:18150/latest.json'
+          $env:EK_DATA_DIR = "$env:RUNNER_TEMP\ek-daten-upd"
+          $res = "$env:RUNNER_TEMP\update-test.json"
+          $run = Start-Process "dist-app\win-unpacked\EK-Service.exe" -ArgumentList '--update-test', $res -PassThru
+          if (-not $run.WaitForExit(180000)) { Stop-Process -Id $run.Id -Force; throw 'Update-Test hängt' }
+          Stop-Process -Id $web.Id
+          Get-Content $res
+          $j = Get-Content $res -Raw | ConvertFrom-Json
+          if (-not $j.ok -or -not $j.check.available -or $j.check.kind -ne 'ordner') { throw 'Neue Version nicht erkannt' }
+          if (-not $j.download.verified -or $j.download.sha256 -ne $sha) { throw 'Download/Prüfsumme fehlerhaft' }
+          Write-Host 'Eingebauter Updater OK.'
+
       - name: Update-Datei (EK-Service-Update.bat) prüfen
         shell: pwsh
         run: |
@@ -131,16 +166,39 @@ jobs:
           if (-not (Test-Path "$env:LOCALAPPDATA\Programs\EK-Service\EK-Service.exe")) { throw 'Programm nach Installer-Update fehlt' }
           Write-Host 'Update-Datei OK.'
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: EK-Service-Windows
-          path: |
-            dist-app/EK-Service-Setup-*.exe
-            windows/EK-Service-Update.bat
-          retention-days: 14
+      # Veröffentlichen: Das Programm (und die Update-Datei) holen sich hier automatisch die neueste Version.
+      - name: Neue Version veröffentlichen (GitHub-Release)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          $v = $env:EK_VERSION
+          $notes = if ($env:COMMIT_MSG) { ($env:COMMIT_MSG -split "`n" | Where-Object { $_ -notmatch '^(Co-Authored-By|Claude-Session):' }) -join "`n" } else { "EK-Service $v" }
+          Set-Content "$env:RUNNER_TEMP\notes.txt" $notes.Trim() -Encoding UTF8
+          gh release create "v$v" "dist-app\EK-Service-Setup-$v.exe" "dist-app\EK-Service-Programm-$v.zip" windows\EK-Service-Update.bat --title "EK-Service $v" --notes-file "$env:RUNNER_TEMP\notes.txt" --target $env:GITHUB_SHA --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Veröffentlichen fehlgeschlagen' }
+          # Nur die 3 neuesten Versionen behalten
+          $old = gh release list --limit 100 --json tagName,createdAt | ConvertFrom-Json | Sort-Object createdAt -Descending | Select-Object -Skip 3
+          foreach ($r in $old) { gh release delete $r.tagName --cleanup-tag --yes; Write-Host "Alte Version gelöscht: $($r.tagName)" }
+      - name: Veröffentlichte Version vom Programm aus abrufbar?
+        shell: pwsh
+        run: |
+          Remove-Item Env:EK_UPDATE_URL -ErrorAction SilentlyContinue
+          $env:EK_DATA_DIR = "$env:RUNNER_TEMP\ek-daten-gh"
+          $ok = $false
+          for ($i = 0; $i -lt 6 -and -not $ok; $i++) {
+            $res = "$env:RUNNER_TEMP\gh-test-$i.json"
+            $run = Start-Process "dist-app\win-unpacked\EK-Service.exe" -ArgumentList '--update-test', $res -PassThru
+            if (-not $run.WaitForExit(60000)) { Stop-Process -Id $run.Id -Force }
+            $j = Get-Content $res -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json
+            if ($j -and $j.ok -and $j.check.latest -eq $env:EK_VERSION -and $j.check.asset) { $ok = $true; Write-Host "GitHub liefert Version $($j.check.latest): $($j.check.asset.name)" }
+            else { Write-Host "Noch nicht sichtbar: $($j.error) $($j.check.latest)"; Start-Sleep 10 }
+          }
+          if (-not $ok) { throw 'Die veröffentlichte Version ist für das Programm nicht abrufbar' }
 
   # Speicher sparen (vom Nutzer gewünscht): nach erfolgreichem Build alle älteren Läufe
-  # samt Artefakten löschen. Es bleibt immer nur der neueste Build übrig.
+  # samt Artefakten löschen. Die Programmdateien liegen in den Releases (zählen nicht zum Actions-Speicher).
   aufraeumen:
     needs: build-windows
     runs-on: ubuntu-latest

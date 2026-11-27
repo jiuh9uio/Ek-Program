@@ -101,11 +101,24 @@ Spalten werden über ihren Namen erkannt, z. B. *Artikel/Bezeichnung*, *MIN/Mind
 
 Pro Artikel lassen sich eine **Bestelleinheit** und ihr **Inhalt** hinterlegen, z. B. *Karton à 6 Flaschen*. Gezählt wird weiter in Flaschen. Vorgeschlagen werden aber immer ganze Kartons: *„Nachkaufen: 2 Kartons (= 12 Flaschen)“*. Mit −/+ änderst du die Menge kartonweise oder trägst sie selbst ein. Bon und PDF drucken „2 Kartons“, darunter „= 12 Flaschen“.
 
-## Updates einspielen (EK-Service-Update.bat)
+## Updates – automatisch im Programm
+
+EK-Service sucht **beim Start und alle 6 Stunden** selbst nach einer neuen Version. Ein Link ist nicht nötig. Gibt es eine, erscheint oben ein blauer Hinweis:
+
+> ⬆️ Neue Version 1.5.23 ist da (du hast 1.5.20). **[Jetzt aktualisieren]** [Später]
+
+*Jetzt aktualisieren* → kurz bestätigen („Was ist neu?“ lässt sich aufklappen) → EK-Service lädt die Version mit Fortschrittsanzeige herunter, prüft die Prüfsumme, schließt sich, spielt das Update ein und **startet von selbst neu**. Vorher werden Datenbank und alte Version gesichert; bei einem Fehler bleibt der alte Stand erhalten. Von Hand geht es unter **System → Programm-Update → „Nach Updates suchen“**.
+
+- Die neuen Versionen kommen von der Projektseite auf GitHub (*Releases*). Jeder erfolgreiche Windows-Build wird dort mit fortlaufender Versionsnummer veröffentlicht, nachdem er auf einem Windows-Server installiert und getestet wurde. Die drei neuesten Versionen bleiben stehen.
+- Installierte Version → es wird der Installer eingespielt; Programmordner-Version → das ZIP.
+- Ohne Internet: Hinweis kommt einfach nicht, EK-Service läuft normal weiter.
+- Abschalten oder eigene Quelle (z. B. NAS): `config.json` im Datenordner mit `{ "updateCheck": false }` bzw. `{ "updateUrl": "https://…/latest.json" }`. Format: `{ "version": "1.6.0", "notes": "…", "zip": { "url": "…", "sha256": "…" }, "setup": { "url": "…" } }`.
+
+### Update von Hand (EK-Service-Update.bat)
 
 Die Update-Datei **`EK-Service-Update.bat`** liegt im Programmordner; bei der installierten Variante gibt es dafür im Startmenü den Eintrag **„EK-Service aktualisieren“**. Doppelklick, und das Update läuft geführt:
 
-1. **[1] Update über Download-Link:** Link zur neuen ZIP- oder Setup-Datei einfügen (Rechtsklick fügt ein). Der Link wird gespeichert; beim nächsten Update genügt **Enter**. Dropbox-, Google-Drive- und OneDrive-Teilen-Links werden automatisch in Direkt-Downloads umgewandelt.
+1. **[1] Update holen:** Einfach **Enter** – die neueste Version wird automatisch gefunden und geladen. Alternativ einen eigenen Link zur ZIP- oder Setup-Datei einfügen (Rechtsklick fügt ein); er wird gespeichert. Dropbox-, Google-Drive- und OneDrive-Teilen-Links werden automatisch in Direkt-Downloads umgewandelt.
 2. **[2] Update aus heruntergeladener Datei:** ZIP/Setup einfach ins Fenster ziehen. Enter nimmt automatisch die neueste EK-Service-Datei aus dem Download-Ordner.
 3. **[3] Vorherige Version wiederherstellen:** falls nach einem Update etwas nicht passt.
 4. **[4] Desktop-Verknüpfung „EK-Service aktualisieren“** anlegen.
@@ -263,7 +276,7 @@ windows/               Update-Datei, Installer-Ergänzungen
 npm install
 npm start                 # Programmfenster öffnen (Electron)
 npm run server            # nur Kern ohne Fenster: http://localhost:8080
-npm test                  # 62 Tests: Berechnungen, Bestandsbuchungen, Rechte, Druck (simulierte Drucker), PDF, Sicherung
+npm test                  # 67 Tests: Berechnungen, Bestandsbuchungen, Rechte, Druck (simulierte Drucker), PDF, Sicherung
 npm run build:win         # → dist-app/EK-Service-Setup-<Version>.exe (Installer, unter Windows bauen)
 npm run build:portable    # → dist-app/EK-Service-Programm-<Version>.zip (Programmordner, baubar unter Windows/Linux)
 node scripts/make-icon.js # Programmsymbol assets/icon.ico aus assets/icon.svg neu erzeugen (benötigt Playwright)

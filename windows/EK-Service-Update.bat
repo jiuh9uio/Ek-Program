@@ -12,6 +12,7 @@ set "EK_SELF=%~f0"
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=[IO.File]::ReadAllText($env:EK_SELF,[Text.Encoding]::UTF8); $m='#=='+'PS==#'; iex $s.Substring($s.IndexOf($m))"
 set "EK_RC=%ERRORLEVEL%"
 if not "%EK_UPDATE_YES%"=="1" pause
+if "%EK_UPDATE_APP%"=="1" if not "%EK_RC%"=="0" pause
 exit /b %EK_RC%
 :ende
 exit /b %ERRORLEVEL%
@@ -34,7 +35,9 @@ $OldDir    = Join-Path $Dir 'alte-versionen'
 $AppData   = Join-Path $env:APPDATA 'EK-Service\daten'
 $Installed = Join-Path $env:LOCALAPPDATA 'Programs\EK-Service\EK-Service.exe'
 $Auto      = ($env:EK_UPDATE_YES -eq '1')
+$FromApp   = ($env:EK_UPDATE_APP -eq '1')   # aus EK-Service gestartet: danach automatisch neu starten
 $Stamp     = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
+$Latest    = 'https://api.github.com/repos/jiuh9uio/Ek-Program/releases/latest'   # neueste veröffentlichte Version
 
 function Say([string]$t, [string]$c = 'Gray') { Write-Host $t -ForegroundColor $c }
 function Ok([string]$t)   { Say "  [OK] $t" 'Green' }
@@ -86,6 +89,17 @@ function Normalize-Link([string]$u) {
   if ($u -match 'drive\.google\.com/open\?id=([^&]+)') { $u = "https://drive.google.com/uc?export=download&id=$($Matches[1])" }
   if ($u -match 'sharepoint\.com|onedrive\.live\.com') { if ($u -notmatch '[?&]download=1') { if ($u.Contains('?')) { $u += '&download=1' } else { $u += '?download=1' } } }
   return $u
+}
+# GitHub-„neueste Version“ → passende Datei (Installer bzw. Programmordner-ZIP) heraussuchen
+function Resolve-Latest([string]$u) {
+  if ($u -notmatch 'api\.github\.com/repos/.+/releases') { return $u }
+  Say '  Suche die neueste Version …'
+  $r = Invoke-RestMethod -Uri $u -Headers @{ 'User-Agent' = 'EK-Service-Updater' } -UseBasicParsing
+  $pat = if ((Mode) -eq 'installiert') { '^EK-Service-Setup.*\.exe$' } else { '^EK-Service-Programm.*\.zip$' }
+  $a = $r.assets | Where-Object { $_.name -match $pat } | Select-Object -First 1
+  if (-not $a) { throw "In der neuesten Version ($($r.tag_name)) fehlt die passende Datei." }
+  Ok "Neueste Version: $($r.tag_name) – $($a.name)"
+  return $a.browser_download_url
 }
 function Download([string]$url, [string]$target) {
   Say '  Lade herunter …'
@@ -226,7 +240,8 @@ function Install([hashtable]$p) {
   Say "     vorher:  $before"
   Say "     jetzt:   $(VersionOf $runExe)" 'Green'
   Say '  ────────────────────────────────────────────────' 'Green'
-  if (-not $Auto -and (YesNo 'EK-Service jetzt starten?' $true)) { Start-Process -FilePath $runExe -WorkingDirectory (Split-Path $runExe) }
+  if ($FromApp) { Say '  EK-Service wird neu gestartet …'; Start-Sleep -Seconds 1; Start-Process -FilePath $runExe -WorkingDirectory (Split-Path $runExe) }
+  elseif (-not $Auto -and (YesNo 'EK-Service jetzt starten?' $true)) { Start-Process -FilePath $runExe -WorkingDirectory (Split-Path $runExe) }
 }
 
 function New-Work { $w = Join-Path $env:TEMP "ek-update-$Stamp"; New-Item -ItemType Directory -Force -Path $w | Out-Null; return $w }
@@ -234,14 +249,17 @@ function New-Work { $w = Join-Path $env:TEMP "ek-update-$Stamp"; New-Item -ItemT
 function Update-FromLink {
   $last = ''
   if (Test-Path $LinkFile) { $last = (Get-Content $LinkFile -Raw -Encoding UTF8).Trim() }
+  if (-not $last) { $last = $Latest }
   if ($env:EK_UPDATE_SOURCE) { $url = $env:EK_UPDATE_SOURCE } else {
     Say '  Download-Link zur neuen Version einfügen (ZIP oder Setup-EXE).'
     Say '  Rechtsklick oder Strg+V fügt ein.' 'DarkGray'
-    if ($last) { Say "  Enter = zuletzt verwendeter Link: $last" 'DarkGray' }
+    if ($last -eq $Latest) { Say '  Enter = automatisch die neueste Version holen (kein Link nötig)' 'DarkGray' }
+    elseif ($last) { Say "  Enter = zuletzt verwendeter Link: $last" 'DarkGray' }
     $url = Ask 'Link' $last
   }
   if (-not $url) { throw 'Kein Link eingegeben.' }
-  $url = Normalize-Link $url
+  $saveUrl = Normalize-Link $url
+  $url = Resolve-Latest $saveUrl
   if ($url -notmatch '^https?://') { throw 'Das ist kein Internet-Link (muss mit http:// oder https:// beginnen).' }
   $work = New-Work
   try {
@@ -250,7 +268,7 @@ function Update-FromLink {
     $file = Join-Path $work $name
     Download $url $file
     Install (Get-Payload $file $work)
-    Set-Content -Path $LinkFile -Value $url -Encoding UTF8
+    if ($saveUrl -ne $Latest) { Set-Content -Path $LinkFile -Value $saveUrl -Encoding UTF8 }
   } finally { Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
@@ -315,7 +333,7 @@ try {
     exit 0
   }
   Say '  Was möchtest du tun?' 'White'
-  Say '   [1] Update über Download-Link  (Link einfügen)'
+  Say '   [1] Update holen  (Enter = neueste Version automatisch, oder eigenen Link einfügen)'
   Say '   [2] Update aus heruntergeladener Datei  (ZIP/Setup ins Fenster ziehen)'
   Say '   [3] Vorherige Version wiederherstellen'
   Say '   [4] Desktop-Verknüpfung „EK-Service aktualisieren“ anlegen'
@@ -335,5 +353,9 @@ try {
   Say ''
   Fail $_.Exception.Message
   Say '  Es wurde nichts verändert bzw. der vorherige Stand wiederhergestellt.' 'DarkGray'
+  if ($FromApp) {
+    $back = if (Test-Path $Installed) { $Installed } else { $Exe }
+    if (Test-Path $back) { Start-Process -FilePath $back -WorkingDirectory (Split-Path $back) }
+  }
   exit 1
 }
