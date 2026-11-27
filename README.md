@@ -1,7 +1,7 @@
 # EK-Service – Einkaufs- und Bestandsmanagement für den Service
 
 Einkaufs- und Bestandsmanagement für den **Servicebereich** eines Hotel- und Restaurantbetriebs.
-Läuft als **einzelne Windows-Datei `EK-Service.exe`**, z. B. auf einem Dell-Rugged-Tablet oder -Laptop. Installation, Datenbankserver oder Internet sind nicht nötig.
+Läuft als **eigenes Windows-Programm** mit eigenem Programmfenster, z. B. auf einem Dell-Rugged-Tablet oder -Laptop – ohne Browser, ohne Webseite, ohne Datenbankserver und ohne Internet.
 
 > Ein Kücheneinkauf ist bewusst **nicht** umgesetzt. Die Datenbank trennt aber jeden Datensatz nach Bereich (`department`), und der Bereich `kueche` ist bereits angelegt (deaktiviert). Ein Küchenmodul kann deshalb später ohne Umbau ergänzt werden.
 
@@ -9,39 +9,34 @@ Läuft als **einzelne Windows-Datei `EK-Service.exe`**, z. B. auf einem Dell-Rug
 
 ## Schnellstart auf dem Dell Rugged (Windows 10/11, 64 Bit)
 
-1. `EK-Service.exe` in einen eigenen Ordner kopieren, z. B. `C:\EK-Service\` (nicht nach *Programme*).
-2. Doppelklick auf `EK-Service.exe`. Das Programmfenster öffnet sich, wie bei jedem normalen Windows-Programm.
-   - Es gibt kein Konsolenfenster und keine Adressleiste; das Fenster ist getrennt vom normalen Browser.
-   - Beim ersten Start werden **Verknüpfungen auf dem Desktop und im Startmenü** angelegt. Danach einfach darüber starten.
-   - **Fenster schließen = Programm beendet.** Zählt gerade noch ein Handy im WLAN mit, läuft EK-Service weiter, bis auch dort geschlossen wird.
-   - Erneuter Doppelklick, während das Programm läuft, öffnet nur das Fenster wieder; es startet keine zweite Kopie.
-   - Windows SmartScreen meldet beim ersten Start eventuell „Unbekannter Herausgeber“, weil die Datei nicht signiert ist. Dann *Weitere Informationen → Trotzdem ausführen* wählen.
-   - Die Windows-Firewall fragt nach einer Freigabe. **„Private Netzwerke“** erlauben, damit Smartphones im WLAN zugreifen können.
-3. Anmelden mit **Benutzer `admin`, Passwort `admin`**. Danach das Passwort sofort ändern (unten links auf den Namen tippen).
+Es gibt zwei gleichwertige Varianten:
+
+- **`EK-Service-Setup-<Version>.exe` (Installer):** Doppelklick – EK-Service wird ohne weitere Fragen für den aktuellen Benutzer installiert (keine Admin-Rechte nötig) und startet sofort. Desktop-Verknüpfung, Startmenü-Eintrag und „EK-Service aktualisieren“ im Startmenü werden angelegt.
+- **`EK-Service-Programm-<Version>.zip` (Programmordner):** ZIP entpacken, z. B. nach `C:\EK-Service-Programm\`, im Ordner `EK-Service` auf **`EK-Service.exe`** doppelklicken. Beim ersten Start werden Verknüpfungen auf dem Desktop und im Startmenü angelegt. Wichtig: den ganzen Ordner behalten, nicht nur die EXE herauskopieren.
+
+Danach:
+
+1. EK-Service öffnet sich als **normales Programmfenster** – keine Adressleiste, keine Tabs, kein Browser, kein Konsolenfenster. Fenster schließen = Programm beendet. Ein zweiter Doppelklick holt nur das offene Fenster nach vorne.
+   - Windows SmartScreen meldet beim ersten Start eventuell „Unbekannter Herausgeber“, weil das Programm nicht signiert ist. Dann *Weitere Informationen → Trotzdem ausführen* wählen.
+   - Die Firewall fragt **nicht** nach: EK-Service ist von außen nicht erreichbar.
+2. **Daten der bisherigen Version übernehmen:** Findet EK-Service beim ersten Start einen alten Ordner `ek-data` (z. B. neben der alten `EK-Service.exe` in `C:\EK-Service\`, auf dem Desktop oder in *Downloads*), fragt es: *„Übernehmen“*, *„Anderen Ordner wählen …“* oder *„Neu beginnen“*. Die alten Dateien bleiben dabei unverändert.
+3. Anmelden mit **Benutzer `admin`, Passwort `admin`** (bei neuem Start). Danach das Passwort sofort ändern (unten links auf den Namen tippen).
 4. Unter **System** den Betriebsnamen eintragen. Zum Ausprobieren können dort Beispieldaten geladen werden.
 5. Unter **Drucker** den Bondrucker anlegen und einen Testdruck auslösen.
 
-Alle Daten liegen im Ordner `ek-data` neben der EXE:
+Bedienung im Fenster: **F11** Vollbild, **Strg + / Strg − / Strg 0** Schrift größer/kleiner/normal (auch per Zwei-Finger-Zoom), **F5** neu laden.
+
+Alle Daten liegen in **`%APPDATA%\EK-Service\daten`** (unter *System → Zugriff & System* gibt es „Datenordner öffnen“):
 
 - `ek-service.db`: Datenbank
 - `backups\`: automatische Sicherungen
-- `config.json`: Port und Startverhalten
-- `logs\ek-service.log`: Protokoll für die Fehlersuche (ersetzt das frühere Konsolenfenster)
+- `logs\ek-service.log`: Protokoll für die Fehlersuche
 
-Ist der Ordner neben der EXE nicht beschreibbar, wird stattdessen `%LOCALAPPDATA%\EK-Service` verwendet.
+Die Daten bleiben bei Updates und auch beim Deinstallieren erhalten.
 
 **Autostart (optional):** Mit `Win+R` → `shell:startup` den Autostart-Ordner öffnen und die Desktop-Verknüpfung dort hineinkopieren.
 
-**Smartphones/Tablets im WLAN:** Unter *System → Zugriff* stehen die Adressen, z. B. `http://192.168.1.20:8080`. Diese Adresse im Browser öffnen und „Zum Startbildschirm hinzufügen“ wählen. Gedruckt wird immer über den EK-Service-Rechner, deshalb funktioniert der Druck auch vom Handy aus.
-
-`config.json`:
-```json
-{ "port": 8080, "host": "0.0.0.0", "openBrowser": true, "appWindow": true, "autoShutdown": true, "createShortcuts": true }
-```
-
-- `"host": "127.0.0.1"` sperrt den Zugriff aus dem Netzwerk.
-- `"autoShutdown": false` lässt EK-Service nach dem Schließen des Fensters weiterlaufen (z. B. als Dauer-Server für Handys).
-- Startparameter: `--port 9000`, `--no-browser`, `--server` (ohne automatisches Beenden).
+**Zugriff vom Handy (optional, standardmäßig aus):** EK-Service ist nur auf diesem Gerät nutzbar. Wer trotzdem mit dem Handy im WLAN mitzählen möchte, legt im Datenordner eine Datei `config.json` mit `{ "lanAccess": true }` an und startet EK-Service neu. Unter *System → Zugriff* stehen dann die Adressen (Port 8080); die Firewall fragt einmalig nach („Private Netzwerke“ erlauben).
 
 ---
 
@@ -108,21 +103,26 @@ Pro Artikel lassen sich eine **Bestelleinheit** und ihr **Inhalt** hinterlegen, 
 
 ## Updates einspielen (EK-Service-Update.bat)
 
-Neben der EXE liegt **`EK-Service-Update.bat`**. Doppelklick, und das Update läuft geführt:
+Die Update-Datei **`EK-Service-Update.bat`** liegt im Programmordner; bei der installierten Variante gibt es dafür im Startmenü den Eintrag **„EK-Service aktualisieren“**. Doppelklick, und das Update läuft geführt:
 
-1. **[1] Update über Download-Link:** Link zur neuen ZIP- oder EXE-Datei einfügen (Rechtsklick fügt ein). Der Link wird gespeichert; beim nächsten Update genügt **Enter**. Dropbox-, Google-Drive- und OneDrive-Teilen-Links werden automatisch in Direkt-Downloads umgewandelt.
-2. **[2] Update aus heruntergeladener Datei:** ZIP/EXE einfach ins Fenster ziehen. Enter nimmt automatisch die neueste EK-Service-Datei aus dem Download-Ordner.
-3. **[3] Vorherige Version wiederherstellen:** falls nach einem Update etwas nicht passt (die letzten 3 Versionen werden aufbewahrt).
+1. **[1] Update über Download-Link:** Link zur neuen ZIP- oder Setup-Datei einfügen (Rechtsklick fügt ein). Der Link wird gespeichert; beim nächsten Update genügt **Enter**. Dropbox-, Google-Drive- und OneDrive-Teilen-Links werden automatisch in Direkt-Downloads umgewandelt.
+2. **[2] Update aus heruntergeladener Datei:** ZIP/Setup einfach ins Fenster ziehen. Enter nimmt automatisch die neueste EK-Service-Datei aus dem Download-Ordner.
+3. **[3] Vorherige Version wiederherstellen:** falls nach einem Update etwas nicht passt.
 4. **[4] Desktop-Verknüpfung „EK-Service aktualisieren“** anlegen.
 
+Die Datei erkennt selbst, was eingespielt wird:
+- **Programmordner (ZIP):** ersetzt den Programmordner, alte Dateien werden entfernt. Die vorige Version wird in `alte-versionen\` gesichert.
+- **Installer (EK-Service-Setup.exe):** installiert still über die vorhandene Installation.
+- **Umstieg von der alten Einzel-EXE:** einfach die Update-Datei neben der alten `EK-Service.exe` mit dem neuen ZIP ausführen. Danach steht dort der neue Programmordner; die alte EXE liegt in `alte-versionen\`, beim ersten Start werden die Daten übernommen.
+
 Bei jedem Update geschieht automatisch:
-- Prüfung, ob der Download wirklich eine EK-Service-EXE/ZIP ist und keine Webseite.
+- Prüfung, ob der Download wirklich EK-Service ist und keine Webseite.
 - Warten, bis EK-Service geschlossen ist (oder auf Nachfrage beenden).
-- **Sicherung** der alten EXE (`alte-versionen\`) und der **Datenbank** (`ek-data\backups\…_vorupdate.db`).
-- Austausch der EXE; bei einem Fehler wird der alte Stand wiederhergestellt.
+- **Sicherung** der **Datenbank** (`backups\…_vorupdate.db`) und der alten Programmversion.
+- Bei einem Fehler wird der alte Stand wiederhergestellt.
 - Anzeige alte → neue Version, auf Wunsch Neustart.
 
-Die Daten (`ek-data`) bleiben bei Updates unverändert; neue Programmversionen passen die Datenbank beim ersten Start automatisch an.
+Die Daten bleiben bei Updates unverändert; neue Programmversionen passen die Datenbank beim ersten Start automatisch an.
 
 ## Barcodes, QR-Codes & Etiketten
 
@@ -234,14 +234,15 @@ Positionen: 4
 
 ## Technik
 
-- **Laufzeit:** Node.js 22 als *Single Executable Application*. Server, Oberfläche, Datenbank und Druckdienst stecken in einer Datei; es gibt **keine Laufzeit-Abhängigkeiten** von Drittanbietern.
+- **Programm:** Electron (eigenes Programmfenster mit eingebautem Chromium und Node.js 24). Der Fachkern läuft im Programm selbst und ist nur programmintern erreichbar (127.0.0.1, zufälliger Port); es gibt **keine Laufzeit-Abhängigkeiten** von Drittanbietern. Installer: NSIS (pro Benutzer, ohne Admin-Rechte).
 - **Datenbank:** SQLite (in Node integriert) im WAL-Modus. Fremdschlüssel, CHECK-Constraints und Eindeutigkeiten sichern die Konsistenz, alle Buchungen laufen in Transaktionen, Schemaänderungen über versionierte Migrationen.
 - **Sicherheit:** scrypt-Passwort-Hashes, HttpOnly/SameSite-Sitzungscookies, CSRF-Header, Content-Security-Policy, serverseitige Validierung und Rechteprüfung bei jedem Endpunkt, Schutz vor Formel-Injektion beim CSV-Export.
 - **Oberfläche:** Vanilla-JavaScript-Module ohne Build-Schritt, responsiv (Tablet, Smartphone, PC), große Touchflächen.
 
 ```
 src/
-  main.js              Start, Browserfenster, Port-Fallback, Einzelinstanz
+electron/              Programmfenster, Datenübernahme, Verknüpfungen, Selbsttest
+  main.js              Start ohne Programmfenster (Entwicklung/Server)
   app.js               Zusammenbau (auch für Tests)
   auth.js              Passwörter, Sitzungen, Rechte
   db/                  Schema/Migrationen, Startdaten
@@ -252,20 +253,23 @@ src/
   routes/              REST-API
 public/                Oberfläche (SPA)
 test/                  Automatisierte Tests
-scripts/build-exe.js   EXE-Erstellung
+scripts/build-portable.js  Programmordner als ZIP
+windows/               Update-Datei, Installer-Ergänzungen
 ```
 
 ### Entwickeln, testen, bauen
 
 ```bash
 npm install
-npm start                 # http://localhost:8080
+npm start                 # Programmfenster öffnen (Electron)
+npm run server            # nur Kern ohne Fenster: http://localhost:8080
 npm test                  # 62 Tests: Berechnungen, Bestandsbuchungen, Rechte, Druck (simulierte Drucker), PDF, Sicherung
-npm run build:exe         # → dist/EK-Service.exe (Windows x64, Fensterprogramm mit Symbol; --console für Konsolenversion; baubar unter Windows/Linux/macOS)
+npm run build:win         # → dist-app/EK-Service-Setup-<Version>.exe (Installer, unter Windows bauen)
+npm run build:portable    # → dist-app/EK-Service-Programm-<Version>.zip (Programmordner, baubar unter Windows/Linux)
 node scripts/make-icon.js # Programmsymbol assets/icon.ico aus assets/icon.svg neu erzeugen (benötigt Playwright)
 ```
 
-Bei jedem Push baut der GitHub-Actions-Workflow `Windows-EXE bauen` die EXE auf einem Windows-Server, startet sie dort zur Probe und stellt sie als Download-Artefakt bereit.
+Bei jedem Push baut der GitHub-Actions-Workflow `Windows-Programm bauen` Installer und Programmordner auf einem Windows-Server, installiert und startet beides dort zur Probe (Selbsttest mit Oberfläche und Datenbank), prüft die Update-Datei und stellt den Installer als Download-Artefakt bereit.
 
 ### Erweiterung um den Kücheneinkauf (später)
 

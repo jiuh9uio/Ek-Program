@@ -1,23 +1,80 @@
 {
   "name": "ek-service",
-  "version": "1.3.0",
-  "description": "EK-Management Service – Einkaufs- und Bestandsmanagement für den Servicebereich (Hotel/Restaurant)",
-  "main": "src/main.js",
+  "version": "1.4.0",
+  "description": "EK-Service – Einkaufs- und Bestandsmanagement für den Servicebereich (Hotel/Restaurant)",
+  "main": "electron/main.js",
   "private": true,
   "license": "UNLICENSED",
   "engines": {
     "node": ">=22.13"
   },
   "scripts": {
-    "start": "node src/main.js",
-    "dev": "node src/main.js --no-browser",
+    "start": "electron .",
+    "server": "node src/main.js --no-browser",
     "test": "node --test test/*.test.js",
+    "build:win": "electron-builder --win nsis --x64 --publish never",
     "build:exe": "node scripts/build-exe.js --target win-x64",
-    "build:linux": "node scripts/build-exe.js --target linux-x64"
+    "build:linux": "node scripts/build-exe.js --target linux-x64",
+    "build:portable": "node scripts/build-portable.js"
   },
   "devDependencies": {
+    "electron": "^45.3.1",
+    "electron-builder": "^26.18.1",
     "esbuild": "0.28.2",
     "postject": "1.0.0-alpha.6",
     "resedit": "^2.0.3"
+  },
+  "author": "EK-Service",
+  "build": {
+    "appId": "de.ekservice.app",
+    "productName": "EK-Service",
+    "copyright": "EK-Service",
+    "directories": {
+      "output": "dist-app",
+      "buildResources": "assets"
+    },
+    "files": [
+      "electron/**",
+      "src/**",
+      "public/**",
+      "assets/icon.ico",
+      "package.json"
+    ],
+    "extraFiles": [
+      {
+        "from": "windows/EK-Service-Update.bat",
+        "to": "EK-Service-Update.bat"
+      }
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "legalTrademarks": "EK-Service"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "EK-Service",
+      "artifactName": "EK-Service-Setup-${version}.exe",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true,
+      "include": "windows/installer.nsh",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico"
+    },
+    "electronLanguages": [
+      "de",
+      "en-US"
+    ]
   }
 }

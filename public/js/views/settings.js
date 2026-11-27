@@ -27,8 +27,9 @@ export async function render(el) {
       </form></section>
     <section class="card"><h2>Zugriff &amp; System</h2>
       <dl class="dl"><dt>Version</dt><dd>${esc(s.version)}</dd><dt>Datenordner</dt><dd class="break">${esc(s.data_dir)}</dd><dt>Datenbank</dt><dd class="break">${esc(s.db_file)}</dd>
-      <dt>Im WLAN erreichbar</dt><dd>${s.lan_urls.map((u) => `<code>${esc(u)}</code>`).join('<br>') || '–'}</dd></dl>
-      <p class="muted small">Smartphones und Tablets im selben Netzwerk öffnen eine dieser Adressen im Browser. Beim ersten Start fragt die Windows-Firewall nach einer Freigabe – „Private Netzwerke“ erlauben.</p>
+      <dt>Im WLAN erreichbar</dt><dd>${s.lan_urls.length ? s.lan_urls.map((u) => `<code>${esc(u)}</code>`).join('<br>') : 'nein – nur dieses Gerät'}</dd></dl>
+      <p class="muted small">${s.lan_urls.length ? 'Smartphones und Tablets im selben Netzwerk öffnen eine dieser Adressen im Browser. Beim ersten Start fragt die Windows-Firewall nach einer Freigabe – „Private Netzwerke“ erlauben.' : 'EK-Service läuft nur in diesem Programmfenster und ist von außen nicht erreichbar. Zugriff vom Handy lässt sich bei Bedarf freischalten (siehe Anleitung: <code>lanAccess</code>).'}</p>
+      ${window.ekDesktop ? '<div class="btn-row"><button class="btn" id="dd">📂 Datenordner öffnen</button><button class="btn" id="upd">⬆️ Programm aktualisieren</button></div>' : ''}
       <button class="btn" id="demo">Beispieldaten laden (nur bei leerer Artikelliste)</button>
     </section>
     <section class="card span2"><div class="card-head"><h2>✉️ E-Mail-Versand</h2><span class="badge ${s.smtp_host && s.smtp_from ? 'st-green' : 'st-grey'}">${s.smtp_host && s.smtp_from ? 'eingerichtet' : 'nicht eingerichtet'}</span></div>
@@ -80,6 +81,12 @@ export async function render(el) {
       const r = await post('/api/settings/mail/test', {});
       toast(`Test-E-Mail an ${r.to.join(', ')} gesendet – bitte Posteingang prüfen.`, 'success', 6000);
     } catch (err) { toast(err.message, 'error', 10000); } finally { btn.disabled = false; btn.textContent = 'Test-E-Mail senden'; }
+  });
+  el.querySelector('#dd')?.addEventListener('click', () => window.ekDesktop.openDataFolder());
+  el.querySelector('#upd')?.addEventListener('click', async () => {
+    if (!(await confirmDialog('Die Update-Datei wird geöffnet. EK-Service muss für das Update geschlossen werden – vorher alles speichern.', { ok: 'Update-Datei öffnen' }))) return;
+    const r = await window.ekDesktop.runUpdater();
+    if (!r.ok) toast(`${r.error} Bei der installierten Version: Startmenü → „EK-Service aktualisieren“.`, 'error', 8000);
   });
   el.querySelector('#demo').addEventListener('click', async () => {
     try { await post('/api/demo-data'); toast('Beispieldaten geladen.', 'success'); } catch (e) { toast(e.message, 'error'); }

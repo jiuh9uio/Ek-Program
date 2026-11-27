@@ -1,4 +1,4 @@
-name: Windows-EXE bauen
+name: Windows-Programm bauen
 
 on:
   push:
@@ -8,7 +8,9 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,119 +20,127 @@ jobs:
         run: npm ci
       - name: Tests (Berechnungen, Bestand, Rechte, Druck, Sicherung)
         run: npm test
-      - name: EXE bauen
-        run: node scripts/build-exe.js --target win-x64
-      - name: EXE unter Windows starten und prüfen
+
+      - name: Installer bauen (EK-Service-Setup.exe)
+        run: npx electron-builder --win nsis --x64 --publish never
+      - name: Installer still installieren und Programm prüfen
         shell: pwsh
         run: |
-          $env:EK_DATA_DIR = "$env:RUNNER_TEMP\ek-data"
-          $p = Start-Process -FilePath "dist\EK-Service.exe" -ArgumentList '--no-browser','--port','18111' -PassThru
-          $ok = $false
-          for ($i = 0; $i -lt 30 -and -not $ok; $i++) {
-            Start-Sleep -Seconds 1
-            try { $r = Invoke-RestMethod http://127.0.0.1:18111/api/health; $ok = $r.ok } catch {}
-          }
-          if (-not $ok) { throw 'EK-Service.exe startet nicht' }
-          $page = Invoke-WebRequest http://127.0.0.1:18111/ -UseBasicParsing
-          if ($page.Content -notmatch 'EK-Service') { throw 'Oberfläche fehlt' }
-          $s = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-          $h = @{ 'X-EK-Client' = '1' }
-          Invoke-RestMethod -Method Post -Uri http://127.0.0.1:18111/api/auth/login -Headers $h -ContentType 'application/json' -Body '{"username":"admin","password":"admin"}' -WebSession $s | Out-Null
-          Invoke-RestMethod -Method Post -Uri http://127.0.0.1:18111/api/demo-data -Headers $h -WebSession $s | Out-Null
-          $arts = Invoke-RestMethod -Uri http://127.0.0.1:18111/api/articles -WebSession $s
-          if ($arts.Count -lt 10) { throw 'Datenbank funktioniert nicht' }
-          $w = Invoke-RestMethod -Uri http://127.0.0.1:18111/api/printers-windows -WebSession $s
-          Write-Host "Windows-Drucker abfragbar: $($w.available) ($($w.printers.Count) gefunden)"
-          if (-not (Test-Path "$env:RUNNER_TEMP\ek-data\ek-service.db")) { throw 'Datenbankdatei fehlt' }
-          Stop-Process -Id $p.Id
-          Write-Host 'EXE-Prüfung erfolgreich.'
-      - name: Verhalten wie ein normales Programm prüfen
+          $setup = Get-ChildItem dist-app\EK-Service-Setup-*.exe | Select-Object -First 1
+          Write-Host "Installer: $($setup.Name) ($([math]::Round($setup.Length / 1MB, 1)) MB)"
+          $p = Start-Process $setup.FullName -ArgumentList '/S' -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "Installation fehlgeschlagen ($($p.ExitCode))" }
+          $exe = "$env:LOCALAPPDATA\Programs\EK-Service\EK-Service.exe"
+          if (-not (Test-Path $exe)) { throw 'EK-Service.exe nicht installiert' }
+          $vi = (Get-Item $exe).VersionInfo
+          Write-Host "Installiert: $($vi.ProductName) $($vi.ProductVersion)"
+          if ($vi.ProductName -ne 'EK-Service') { throw 'Versionsangabe fehlt' }
+          if (-not (Test-Path "$env:LOCALAPPDATA\Programs\EK-Service\EK-Service-Update.bat")) { throw 'Update-Datei fehlt im Programmordner' }
+          $desk = Join-Path ([Environment]::GetFolderPath('Desktop')) 'EK-Service.lnk'
+          if (-not (Test-Path $desk)) { throw 'Desktop-Verknüpfung fehlt' }
+          $sm = Join-Path ([Environment]::GetFolderPath('Programs')) 'EK-Service aktualisieren.lnk'
+          if (-not (Test-Path $sm)) { throw 'Startmenü-Eintrag „EK-Service aktualisieren“ fehlt' }
+          # Programm im Selbsttest starten: Fenster öffnet, Oberfläche lädt, Datenbank läuft
+          $env:EK_DATA_DIR = "$env:RUNNER_TEMP\ek-daten-inst"
+          $res = "$env:RUNNER_TEMP\selbsttest-inst.json"
+          $run = Start-Process $exe -ArgumentList '--selbsttest', $res -PassThru
+          if (-not $run.WaitForExit(90000)) { Stop-Process -Id $run.Id -Force; throw 'Selbsttest hängt' }
+          Get-Content $res
+          $j = Get-Content $res -Raw | ConvertFrom-Json
+          if (-not $j.ok) { throw 'Selbsttest des installierten Programms fehlgeschlagen' }
+          if (-not (Test-Path "$env:EK_DATA_DIR\ek-service.db")) { throw 'Datenbankdatei fehlt' }
+          # Altdaten-Übernahme (bisherige Einzel-EXE mit ek-data)
+          $alt = "$env:RUNNER_TEMP\alt-ek"
+          New-Item -ItemType Directory -Force $alt | Out-Null
+          Copy-Item "$env:EK_DATA_DIR\ek-service.db" "$alt\ek-service.db"
+          $env:EK_LEGACY_DIR = $alt
+          $env:EK_DATA_DIR = "$env:RUNNER_TEMP\ek-daten-neu"
+          $run = Start-Process $exe -ArgumentList '--selbsttest', "$env:RUNNER_TEMP\selbsttest-alt.json" -PassThru
+          if (-not $run.WaitForExit(90000)) { Stop-Process -Id $run.Id -Force; throw 'Selbsttest (Übernahme) hängt' }
+          if (-not (Test-Path "$env:EK_DATA_DIR\ek-service.db")) { throw 'Altdaten nicht übernommen' }
+          Remove-Item Env:EK_LEGACY_DIR
+          # Fensterprogramm (kein Konsolenfenster)
+          $b = [IO.File]::ReadAllBytes($exe); $pe = [BitConverter]::ToInt32($b, 0x3C)
+          if ([BitConverter]::ToUInt16($b, $pe + 92) -ne 2) { throw 'Kein Fensterprogramm (Subsystem)' }
+          Write-Host 'Installer und Programm OK.'
+
+      - name: Programmordner (ZIP, ohne Installer) bauen und prüfen
         shell: pwsh
         run: |
-          # 1) Fensterprogramm: PE-Subsystem muss GUI (2) sein → kein Konsolenfenster
-          $b = [System.IO.File]::ReadAllBytes("dist\EK-Service.exe")
-          $pe = [BitConverter]::ToInt32($b, 0x3C)
-          $sub = [BitConverter]::ToUInt16($b, $pe + 24 + 68)
-          if ($sub -ne 2) { throw "Subsystem ist $sub statt 2 (GUI)" }
-          Write-Host "Subsystem: GUI (kein Konsolenfenster)"
-          # 3) Zweiter Start + automatisches Beenden, wenn das Fenster geschlossen wird
-          $env:EK_DATA_DIR = "$env:RUNNER_TEMP\ek-data2"
-          $p = Start-Process -FilePath "dist\EK-Service.exe" -ArgumentList '--no-browser','--auto-shutdown','--port','18121' -PassThru
-          $ok = $false
-          for ($i = 0; $i -lt 30 -and -not $ok; $i++) { Start-Sleep 1; try { $ok = (Invoke-RestMethod http://127.0.0.1:18121/api/health).ok } catch {} }
-          if (-not $ok) { throw 'Start fehlgeschlagen' }
-          # 2) Desktop-Verknüpfung wird beim ersten Start angelegt
-          $lnk = Join-Path ([Environment]::GetFolderPath('Desktop')) 'EK-Service.lnk'
-          for ($i = 0; $i -lt 30 -and -not (Test-Path $lnk); $i++) { Start-Sleep 1 }
-          if (-not (Test-Path $lnk)) { throw 'Desktop-Verknüpfung fehlt' }
-          $t = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk).TargetPath
-          Write-Host "Verknüpfung: $lnk -> $t"
-          $second = Start-Process -FilePath "dist\EK-Service.exe" -ArgumentList '--no-browser','--port','18121' -PassThru
-          if (-not $second.WaitForExit(15000)) { throw 'Zweite Instanz beendet sich nicht' }
-          Write-Host "Zweiter Start: keine zweite Kopie (Exit $($second.ExitCode))"
-          # Fenster simulieren: Anwesenheits-Verbindung 5 s offen halten, dann schließen
-          $c = New-Object System.Net.Sockets.TcpClient('127.0.0.1', 18121)
-          $st = $c.GetStream()
-          $req = [Text.Encoding]::ASCII.GetBytes("GET /api/presence HTTP/1.1`r`nHost: 127.0.0.1`r`n`r`n")
-          $st.Write($req, 0, $req.Length)
-          Start-Sleep 5
-          $c.Close()
-          Write-Host 'Fenster geschlossen – warte auf automatisches Beenden …'
-          if (-not $p.WaitForExit(45000)) { Stop-Process -Id $p.Id; throw 'Programm hat sich nach dem Schließen nicht beendet' }
-          if (Test-Path "$env:EK_DATA_DIR\laeuft.json") { throw 'Laufzeitdatei wurde nicht aufgeräumt' }
-          Get-Content "$env:EK_DATA_DIR\logs\ek-service.log"
-          Write-Host 'Programmverhalten OK.'
+          node scripts/build-portable.js
+          if ($LASTEXITCODE -ne 0) { throw 'Bau des Programmordners fehlgeschlagen' }
+          $zip = Get-ChildItem dist-app\EK-Service-Programm-*.zip | Select-Object -First 1
+          Write-Host "ZIP: $($zip.Name) ($([math]::Round($zip.Length / 1MB, 1)) MB)"
+          $x = "$env:RUNNER_TEMP\zip-test"
+          Expand-Archive $zip.FullName $x -Force
+          $env:EK_DATA_DIR = "$env:RUNNER_TEMP\ek-daten-zip"
+          $res = "$env:RUNNER_TEMP\selbsttest-zip.json"
+          $run = Start-Process "$x\EK-Service\EK-Service.exe" -ArgumentList '--selbsttest', $res -PassThru
+          if (-not $run.WaitForExit(90000)) { Stop-Process -Id $run.Id -Force; throw 'Selbsttest hängt' }
+          Get-Content $res
+          if (-not (Get-Content $res -Raw | ConvertFrom-Json).ok) { throw 'Selbsttest des Programmordners fehlgeschlagen' }
+          if (-not (Test-Path "$x\EK-Service\EK-Service-Update.bat")) { throw 'Update-Datei fehlt im ZIP' }
+          Write-Host 'Programmordner OK.'
+
       - name: Update-Datei (EK-Service-Update.bat) prüfen
         shell: pwsh
         run: |
-          $inst = "$env:RUNNER_TEMP\ek-install"
+          $env:EK_UPDATE_YES = '1'
+          $zip = (Get-ChildItem dist-app\EK-Service-Programm-*.zip | Select-Object -First 1).FullName
+          $want = (Get-FileHash dist-app\win-unpacked\resources\app.asar).Hash
+          $inst = "$env:RUNNER_TEMP\ek-ordner"
+          # 1) Bisherige Einzel-EXE (alt) → neuer Programmordner aus ZIP-Datei
           New-Item -ItemType Directory -Force "$inst\ek-data" | Out-Null
-          Copy-Item "C:\Windows\System32\notepad.exe" "$inst\EK-Service.exe"   # "alte" Version
+          Copy-Item "C:\Windows\System32\notepad.exe" "$inst\EK-Service.exe"
           Set-Content "$inst\ek-data\ek-service.db" 'alte-daten'
           Copy-Item windows\EK-Service-Update.bat $inst\
-          $zip = "$env:RUNNER_TEMP\web\EK-Service-Windows.zip"
-          New-Item -ItemType Directory -Force (Split-Path $zip) | Out-Null
-          Compress-Archive -Path dist\EK-Service.exe, windows\EK-Service-Update.bat -DestinationPath $zip -Force
-          $want = (Get-FileHash dist\EK-Service.exe).Hash
-          $env:EK_UPDATE_YES = '1'
-          # 1) Update aus ZIP-Datei
           $env:EK_UPDATE_SOURCE = $zip
           cmd /c "`"$inst\EK-Service-Update.bat`""
-          if ($LASTEXITCODE -ne 0) { throw "Update aus Datei fehlgeschlagen ($LASTEXITCODE)" }
-          if ((Get-FileHash "$inst\EK-Service.exe").Hash -ne $want) { throw 'EXE wurde nicht ersetzt' }
-          if (-not (Get-ChildItem "$inst\alte-versionen\EK-Service_*.exe")) { throw 'Alte Version nicht gesichert' }
+          if ($LASTEXITCODE -ne 0) { throw "Update alt → neu fehlgeschlagen ($LASTEXITCODE)" }
+          if ((Get-FileHash "$inst\resources\app.asar").Hash -ne $want) { throw 'Programmordner nicht eingespielt' }
+          if ((Get-Content "$inst\ek-data\ek-service.db") -ne 'alte-daten') { throw 'Daten verändert' }
+          if (-not (Get-ChildItem "$inst\alte-versionen\EK-Service_*.exe")) { throw 'Alte EXE nicht gesichert' }
           if (-not (Get-ChildItem "$inst\ek-data\backups\*vorupdate.db")) { throw 'Datenbank nicht gesichert' }
           Write-Host "Version nach Update: $((Get-Item "$inst\EK-Service.exe").VersionInfo.ProductVersion)"
-          # 2) Fehlerfall: Webseite statt Datei → Abbruch, EXE unverändert
+          # 2) Fehlerfall: Webseite statt Datei → Abbruch, nichts verändert
           Set-Content "$env:RUNNER_TEMP\kaputt.zip" '<html>Bitte anmelden</html>'
           $env:EK_UPDATE_SOURCE = "$env:RUNNER_TEMP\kaputt.zip"
           cmd /c "`"$inst\EK-Service-Update.bat`""
           if ($LASTEXITCODE -ne 1) { throw "Fehlerfall nicht erkannt ($LASTEXITCODE)" }
-          if ((Get-FileHash "$inst\EK-Service.exe").Hash -ne $want) { throw 'EXE trotz Fehler verändert' }
-          # 3) Update über Download-Link (lokaler Webserver)
-          Copy-Item "C:\Windows\System32\notepad.exe" "$inst\EK-Service.exe" -Force
+          if ((Get-FileHash "$inst\resources\app.asar").Hash -ne $want) { throw 'Programm trotz Fehler verändert' }
+          # 3) Ordner → Ordner über Download-Link (lokaler Webserver); veraltete Dateien verschwinden
+          Set-Content "$inst\veraltet.txt" 'weg damit'
           $web = Start-Process python -ArgumentList '-m', 'http.server', '18130', '--bind', '127.0.0.1', '--directory', (Split-Path $zip) -PassThru -WindowStyle Hidden
           $up = $false
           for ($i = 0; $i -lt 30 -and -not $up; $i++) { Start-Sleep 1; try { Invoke-WebRequest http://127.0.0.1:18130/ -UseBasicParsing -TimeoutSec 2 | Out-Null; $up = $true } catch {} }
           if (-not $up) { throw 'Test-Webserver startet nicht' }
-          $env:EK_UPDATE_SOURCE = 'http://127.0.0.1:18130/EK-Service-Windows.zip'
+          $env:EK_UPDATE_SOURCE = "http://127.0.0.1:18130/$(Split-Path $zip -Leaf)"
           cmd /c "`"$inst\EK-Service-Update.bat`""
           $rc = $LASTEXITCODE
           Stop-Process -Id $web.Id
           if ($rc -ne 0) { throw "Update über Link fehlgeschlagen ($rc)" }
-          if ((Get-FileHash "$inst\EK-Service.exe").Hash -ne $want) { throw 'EXE nach Link-Update falsch' }
+          if (Test-Path "$inst\veraltet.txt") { throw 'Veraltete Datei nicht entfernt' }
+          if (-not (Test-Path "$inst\ek-data\ek-service.db")) { throw 'Datenordner beim Update gelöscht' }
+          if (-not (Get-ChildItem "$inst\alte-versionen" -Directory -Filter 'EK-Service_*')) { throw 'Alter Programmordner nicht gesichert' }
           if ((Get-Content "$inst\update-link.txt").Trim() -ne $env:EK_UPDATE_SOURCE) { throw 'Link wurde nicht gespeichert' }
+          # 4) Installierte Version über den Installer aktualisieren (Startmenü-Weg)
+          $setup = (Get-ChildItem dist-app\EK-Service-Setup-*.exe | Select-Object -First 1).FullName
+          $env:EK_UPDATE_SOURCE = $setup
+          cmd /c "`"$env:LOCALAPPDATA\Programs\EK-Service\EK-Service-Update.bat`""
+          if ($LASTEXITCODE -ne 0) { throw "Update per Installer fehlgeschlagen ($LASTEXITCODE)" }
+          if (-not (Test-Path "$env:LOCALAPPDATA\Programs\EK-Service\EK-Service.exe")) { throw 'Programm nach Installer-Update fehlt' }
           Write-Host 'Update-Datei OK.'
+
       - uses: actions/upload-artifact@v4
         with:
           name: EK-Service-Windows
           path: |
-            dist/EK-Service.exe
+            dist-app/EK-Service-Setup-*.exe
             windows/EK-Service-Update.bat
           retention-days: 14
 
   # Speicher sparen (vom Nutzer gewünscht): nach erfolgreichem Build alle älteren Läufe
-  # samt EXE-Artefakten löschen. Es bleibt immer nur der neueste Build übrig.
+  # samt Artefakten löschen. Es bleibt immer nur der neueste Build übrig.
   aufraeumen:
     needs: build-windows
     runs-on: ubuntu-latest

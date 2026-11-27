@@ -120,7 +120,8 @@ module.exports = function register(router, { config, log }) {
     data_dir: config.dataDir,
     db_file: config.dbFile,
     version: require('../version').VERSION,
-    lan_urls: lanUrls(config.port),
+    lan_urls: config.host === '127.0.0.1' ? [] : lanUrls(config.port),
+    desktop_app: !!process.versions.electron,
   }));
 
   router.put('/api/settings', { perm: 'system.manage' }, ({ db, user, body }) => {

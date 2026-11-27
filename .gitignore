@@ -4,3 +4,4 @@ build/
 ek-data/
 *.log
 deliver/
+dist-app/
