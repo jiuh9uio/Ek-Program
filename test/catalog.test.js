@@ -3,11 +3,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const { DEFAULT_CATEGORIES } = require('../src/db/seed');
 
 const UNITS = ['Flasche', 'Kasten', 'Karton', 'Stück', 'Liter', 'Packung', 'Dose', 'Fass', 'Kanister', 'Rolle', 'Beutel', 'Kilogramm'];
 let C;
-test.before(async () => { C = await import(path.join(__dirname, '..', 'public', 'js', 'catalog.js')); });
+test.before(async () => { C = await import(pathToFileURL(path.join(__dirname, '..', 'public', 'js', 'catalog.js')).href); });
 
 test('Katalog: Kategorien und Einheiten existieren, Gebinde plausibel, Namen eindeutig', () => {
   assert.ok(C.CATALOG.length > 250, `nur ${C.CATALOG.length} Einträge`);
