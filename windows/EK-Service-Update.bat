@@ -6,13 +6,15 @@ rem Kopie im Temp-Ordner ausführen, damit sich die Datei beim Update nicht selb
 set "EK_DIR=%~dp0"
 set "EK_ORIG=%~f0"
 copy /y "%~f0" "%TEMP%\ek-service-update.bat" >nul
-call "%TEMP%\ek-service-update.bat" --aus-temp & exit /b
+call "%TEMP%\ek-service-update.bat" --aus-temp & goto :ende
 :start
 set "EK_SELF=%~f0"
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=[IO.File]::ReadAllText($env:EK_SELF,[Text.Encoding]::UTF8); $m='#=='+'PS==#'; iex $s.Substring($s.IndexOf($m))"
 set "EK_RC=%ERRORLEVEL%"
 if not "%EK_UPDATE_YES%"=="1" pause
 exit /b %EK_RC%
+:ende
+exit /b %ERRORLEVEL%
 
 #==PS==#
 # ---------------------------------------------------------------------------
