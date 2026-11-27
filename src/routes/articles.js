@@ -194,6 +194,11 @@ module.exports = function register(router) {
 
   router.post('/api/articles', { perm: 'articles.manage' }, (ctx) => {
     const { db, user, body } = ctx;
+    if (!String(body.article_no ?? '').trim()) {
+      let no;
+      do { no = `A-${String(db.nextNumber('article_auto')).padStart(4, '0')}`; } while (db.get('SELECT id FROM articles WHERE article_no = ? COLLATE NOCASE', no));
+      body.article_no = no;
+    }
     const a = articleInput(db, body, null);
     enforceFieldPerms(ctx, a, null);
     const image = v.image(body.image, 'image');

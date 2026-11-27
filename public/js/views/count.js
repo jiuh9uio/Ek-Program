@@ -6,7 +6,8 @@ import { newListWizard } from './newlist.js';
 import { shareButtons, bindShare } from './share.js';
 import { pushScanHandler } from '../scanner.js';
 import { resolveCode } from './scanhelp.js';
-import { matches } from '../ui.js';
+import { matches, modal } from '../ui.js';
+import { extraDialog } from './extras.js';
 import { sound, haptic, pop, floatText, confetti, celebrate, checkAchievements } from '../reward.js';
 
 const MILESTONES = [[25, '🚀', 'Ein Viertel geschafft!'], [50, '💪', 'Halbzeit!'], [75, '🏁', 'Endspurt – drei Viertel geschafft!']];
@@ -178,6 +179,10 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
       </div>`}
       ${c.status === 'open' && rest.length ? '<p class="muted small">Nicht gezählte Artikel bleiben „nicht kontrolliert“ – sie werden nicht als Bestand 0 gewertet.</p>' : ''}
     </section>
+    ${c.status === 'open' || c.extras.length ? `<section class="card mt extras-card"><div class="card-head"><h2>✍️ Sonderwünsche &amp; Neues <small class="muted">(${c.extras.length})</small></h2>
+      ${c.status === 'open' && can('list.create') ? '<button class="btn btn-primary" id="add-extra">+ Sonderwunsch</button>' : ''}</div>
+      ${c.extras.length ? `<ul class="extras-list">${c.extras.map((x) => `<li><span class="grow"><strong>${esc(x.name)}</strong>${x.note ? ` <small class="muted">– ${esc(x.note)}</small>` : ''}${x.supplier_name ? `<br><small class="muted">${esc(x.supplier_name)}</small>` : ''}</span><b>${fmtQty(x.qty)} ${esc(x.unit || '')}</b></li>`).join('')}</ul>`
+    : '<p class="muted">Etwas, das nicht in der Liste steht? Z. B. ein neuer Wein zum Probieren oder ein Wunsch vom Küchenchef – hier eintragen.</p>'}</section>` : ''}
     <div class="grid-2 mt">
       <section class="card"><h2>Bestellvorschlag (${ordered.length})</h2>${ordered.length ? `<table class="table table-sm"><thead><tr><th>Artikel</th><th class="num">Gezählt</th><th class="num">Nachkaufen</th></tr></thead>
         <tbody>${ordered.map((i) => `<tr data-jump="${i.id}"><td>${esc(i.name)}</td><td class="num">${i.counted_qty === null ? '–' : fmtQty(i.counted_qty)}</td><td class="num"><b>${esc(orderText(i.order.qty, i).main)}</b>${orderText(i.order.qty, i).base ? `<br><small class="muted">${esc(orderText(i.order.qty, i).base)}</small>` : ''}</td></tr>`).join('')}</tbody></table>` : emptyState('Nichts nachzukaufen.', '👍')}</section>
@@ -245,7 +250,27 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
     } catch (e) { toast(e.message, 'error'); }
   }
 
+  let askedExtras = false;
+  async function addExtras() {
+    const sup = c.scope && c.scope.supplier_ids && c.scope.supplier_ids.length === 1 ? c.scope.supplier_ids[0] : null;
+    await extraDialog(c.list_id, { supplierId: sup });
+    c = await get(`/api/counts/${id}`);
+    select(null);
+  }
+
   async function finish() {
+    // Vor dem Fertigstellen einmal nach Sonderwünschen fragen
+    if (!askedExtras && c.status === 'open' && can('list.create')) {
+      askedExtras = true;
+      const choice = await new Promise((res) => modal({
+        title: '✍️ Noch Sonderwünsche?',
+        body: `<p class="confirm-text">Soll noch etwas mit, das nicht in der Liste steht?</p><p class="muted">Z. B. ein neuer Wein zum Probieren, Deko für eine Feier oder ein Wunsch vom Küchenchef.${c.extras.length ? ` Bisher: ${c.extras.map((x) => esc(x.name)).join(', ')}.` : ''}</p>`,
+        actions: [{ label: 'Nein, fertigstellen', value: 'no' }, { label: '✍️ Sonderwunsch eintragen', cls: 'btn-primary', value: 'add' }],
+        onClose: (v) => res(v),
+      }));
+      if (choice === null || choice === undefined) { askedExtras = false; return; }
+      if (choice === 'add') { await addExtras(); toast('Wenn alles drin ist: „✓ Fertigstellen“ tippen.', 'info'); return; }
+    }
     const s = c.summary;
     const rest = s.open + s.skipped;
     if (rest && !(await confirmDialog(`${rest} Artikel wurden nicht gezählt und bleiben „nicht kontrolliert“. Trotzdem fertigstellen?`, { ok: '✓ Fertigstellen' }))) return;
@@ -306,6 +331,7 @@ async function renderSession(el, { can, setTitle, setActions }, id) {
     el.querySelector('#scan-back')?.addEventListener('click', () => select(c.items.find((x) => x.id === resumeId)));
     el.querySelector('#cont')?.addEventListener('click', () => { const r = c.items.find((i) => i.state !== 'counted'); select(r); });
     el.querySelector('#fin')?.addEventListener('click', finish);
+    el.querySelector('#add-extra')?.addEventListener('click', addExtras);
     bindShare(el, { onDone: () => {} });
     const inp = el.querySelector('#cnt');
     if (inp) {

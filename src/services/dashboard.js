@@ -23,9 +23,9 @@ function dashboard(db, { department = 'service', withStats = false, months = 12,
     GROUP BY pl.id ORDER BY pl.updated_at DESC`, department);
   const openLists = lists.filter((l) => ['draft', 'ready'].includes(l.status));
   const openOrders = lists.filter((l) => ['ordered', 'partial'].includes(l.status));
-  const pendingDeliveries = db.all(`SELECT pi.id, pl.id AS list_id, pl.number, a.name AS article_name, s.name AS supplier_name,
-      (pi.qty - pi.qty_received) AS open_qty, u.plural AS unit_plural, u.name AS unit_name, pl.ordered_at
-    FROM purchase_items pi JOIN purchase_lists pl ON pl.id = pi.list_id JOIN articles a ON a.id = pi.article_id
+  const pendingDeliveries = db.all(`SELECT pi.id, pl.id AS list_id, pl.number, COALESCE(a.name, pi.free_name) AS article_name, s.name AS supplier_name,
+      (pi.qty - pi.qty_received) AS open_qty, COALESCE(u.plural, pi.free_unit) AS unit_plural, COALESCE(u.name, pi.free_unit) AS unit_name, pl.ordered_at
+    FROM purchase_items pi JOIN purchase_lists pl ON pl.id = pi.list_id LEFT JOIN articles a ON a.id = pi.article_id
     LEFT JOIN suppliers s ON s.id = pi.supplier_id LEFT JOIN units u ON u.id = a.unit_id
     WHERE pl.department = ? AND pl.status IN ('ordered','partial') AND pi.qty_received < pi.qty - 1e-9
     ORDER BY pl.ordered_at, a.name`, department);

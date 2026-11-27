@@ -112,7 +112,7 @@ function upsertItem(db, user, can, listId, articleId, { qty, mode = 'set', note,
 function updateItem(db, user, can, listId, itemId, body) {
   return db.transaction(() => {
     const list = getListRow(db, listId);
-    const item = db.get('SELECT pi.*, a.name AS article_name FROM purchase_items pi JOIN articles a ON a.id = pi.article_id WHERE pi.id = ? AND pi.list_id = ?', itemId, listId);
+    const item = db.get('SELECT pi.*, COALESCE(a.name, pi.free_name) AS article_name FROM purchase_items pi LEFT JOIN articles a ON a.id = pi.article_id WHERE pi.id = ? AND pi.list_id = ?', itemId, listId);
     if (!item) throw notFound('Position nicht gefunden.');
     const changes = {};
     // "Eingekauft"-Haken und Bemerkung dürfen auch in bestellten Listen gesetzt werden
@@ -123,8 +123,8 @@ function updateItem(db, user, can, listId, itemId, body) {
     if (body.qty !== undefined) {
       const qty = round3(Number(body.qty));
       if (!(qty > 0)) throw unprocessable('Die Bestellmenge muss größer als 0 sein.');
-      const article = db.get('SELECT * FROM articles WHERE id = ?', item.article_id);
-      checkQtyAllowed(db, list, article, qty, can);
+      const article = item.article_id ? db.get('SELECT * FROM articles WHERE id = ?', item.article_id) : null;
+      if (article) checkQtyAllowed(db, list, article, qty, can); // Sonderwünsche: keine MIN/MAX-Grenze
       if (qty !== item.qty) { changes.qty = { von: item.qty, nach: qty }; db.run('UPDATE purchase_items SET qty = ? WHERE id = ?', qty, itemId); }
     }
     if (body.note !== undefined) {
@@ -159,7 +159,7 @@ function removeItem(db, user, can, listId, itemId) {
   return db.transaction(() => {
     const list = getListRow(db, listId);
     assertEditable(list, can);
-    const item = db.get('SELECT pi.*, a.name AS article_name FROM purchase_items pi JOIN articles a ON a.id = pi.article_id WHERE pi.id = ? AND pi.list_id = ?', itemId, listId);
+    const item = db.get('SELECT pi.*, COALESCE(a.name, pi.free_name) AS article_name FROM purchase_items pi LEFT JOIN articles a ON a.id = pi.article_id WHERE pi.id = ? AND pi.list_id = ?', itemId, listId);
     if (!item) throw notFound('Position nicht gefunden.');
     if (item.qty_received > 0) throw conflict('Für diese Position wurde bereits Ware gebucht – Entfernen nicht möglich.');
     db.run('DELETE FROM purchase_items WHERE id = ?', itemId);
@@ -176,13 +176,14 @@ function loadList(db, id) {
     LEFT JOIN users cb ON cb.id = pl.closed_by WHERE pl.id = ?`, id);
   if (!list) throw notFound('Einkaufsliste nicht gefunden.');
   const items = db.all(`
-    SELECT pi.*, a.name AS article_name, a.article_no, a.pack_size, a.current_stock, a.min_stock, a.max_stock,
+    SELECT pi.*, COALESCE(a.name, pi.free_name) AS article_name, (pi.article_id IS NULL) AS is_free, a.article_no, a.pack_size, a.current_stock, a.min_stock, a.max_stock,
            a.order_step, a.min_order_qty, a.stock_checked_at, a.check_result, a.price_net, a.active AS article_active,
-           u.name AS unit_name, u.plural AS unit_plural, a.units_per_order, ou.name AS order_unit_name, ou.plural AS order_unit_plural, c.name AS category_name, c.sort_order AS category_sort,
+           COALESCE(u.name, pi.free_unit) AS unit_name, COALESCE(u.plural, pi.free_unit) AS unit_plural, a.units_per_order, ou.name AS order_unit_name, ou.plural AS order_unit_plural, CASE WHEN pi.article_id IS NULL THEN 'Sonderwünsche' ELSE c.name END AS category_name,
+           CASE WHEN pi.article_id IS NULL THEN 100000 ELSE c.sort_order END AS category_sort,
            l.name AS location_name, l.sort_order AS location_sort, s.name AS supplier_name,
            s.min_order_value, s.shipping_cost, ab.display_name AS added_by_name
     FROM purchase_items pi
-    JOIN articles a ON a.id = pi.article_id
+    LEFT JOIN articles a ON a.id = pi.article_id
     LEFT JOIN units u ON u.id = a.unit_id
     LEFT JOIN units ou ON ou.id = a.order_unit_id
     LEFT JOIN categories c ON c.id = a.category_id
@@ -190,7 +191,7 @@ function loadList(db, id) {
     LEFT JOIN suppliers s ON s.id = pi.supplier_id
     LEFT JOIN users ab ON ab.id = pi.added_by
     WHERE pi.list_id = ?
-    ORDER BY COALESCE(c.sort_order, 9999), a.name COLLATE NOCASE`, id);
+    ORDER BY (pi.article_id IS NULL), COALESCE(c.sort_order, 9999), COALESCE(a.name, pi.free_name) COLLATE NOCASE`, id);
 
   const groups = new Map();
   let estTotal = 0;
@@ -345,12 +346,12 @@ function receive(db, user, can, listId, entries, { note } = {}) {
       if (delta === 0 && price === null) continue;
       const newReceived = round3(item.qty_received + delta);
       if (newReceived < 0) throw unprocessable('Die gelieferte Menge kann nicht negativ werden.');
-      const article = db.get('SELECT * FROM articles WHERE id = ?', item.article_id);
+      const article = item.article_id ? db.get('SELECT * FROM articles WHERE id = ?', item.article_id) : null;
 
       db.run('UPDATE purchase_items SET qty_received = ?, unit_price_actual = COALESCE(?, unit_price_actual), purchased = CASE WHEN ? > 0 THEN 1 ELSE purchased END, updated_at = ? WHERE id = ?',
         newReceived, price, newReceived, t, item.id);
 
-      if (delta !== 0) {
+      if (delta !== 0 && article) {
         // Unbekannter Bestand bleibt unbekannt (keine Annahme "0"), Bewegung wird trotzdem protokolliert.
         const before = article.current_stock;
         const after = before === null ? null : round3(Math.max(0, before + delta));
@@ -359,11 +360,11 @@ function receive(db, user, can, listId, entries, { note } = {}) {
           VALUES(?,?,?,?,?,?,?,?,?,?,?)`, article.id, t, user.id, 'receipt', before, after, delta,
         price ?? item.unit_price_actual ?? item.unit_price_est, item.supplier_id, listId, note || null);
       }
-      if (price !== null && e.update_price && can('prices.manage') && price !== article.price_net) {
+      if (article && price !== null && e.update_price && can('prices.manage') && price !== article.price_net) {
         db.run('UPDATE articles SET price_net = ?, updated_at = ? WHERE id = ?', price, t, article.id);
         audit(db, user, 'Einkaufspreis aus Wareneingang übernommen', 'article', article.id, { von: article.price_net, nach: price });
       }
-      booked.push({ artikel: article.name, menge: delta, preis: price });
+      booked.push({ artikel: article ? article.name : `${item.free_name} (Sonderwunsch)`, menge: delta, preis: price });
     }
     if (!booked.length) throw unprocessable('Keine Änderungen zum Buchen.');
     const rs = receiptStatus(db, listId);
@@ -377,6 +378,60 @@ function receive(db, user, can, listId, entries, { note } = {}) {
     audit(db, user, 'Wareneingang gebucht', 'list', listId, { nummer: list.number, positionen: booked.length });
     touch(db, listId);
     return { status, booked: booked.length };
+  });
+}
+
+/** Sonderwunsch: freie Position ohne Artikel (z. B. neuer Wein zum Probieren). */
+function addExtra(db, user, can, listId, { name, qty, unit, supplier_id, note, price } = {}) {
+  return db.transaction(() => {
+    const list = getListRow(db, listId);
+    assertEditable(list, can);
+    const n = String(name ?? '').trim();
+    if (!n) throw unprocessable('Bitte eine Bezeichnung für den Sonderwunsch eingeben.', { field: 'name' });
+    if (n.length > 120) throw unprocessable('Die Bezeichnung ist zu lang (max. 120 Zeichen).', { field: 'name' });
+    const q = round3(Number(String(qty ?? 1).replace(',', '.')));
+    if (!(q > 0) || q > 1e6) throw unprocessable('Die Menge muss größer als 0 sein.', { field: 'qty' });
+    const sid = supplier_id ? Number(supplier_id) : null;
+    if (sid && !db.get('SELECT id FROM suppliers WHERE id = ?', sid)) throw unprocessable('Lieferant nicht gefunden.');
+    let p = 0;
+    if (price !== undefined && price !== null && price !== '') {
+      if (!can('prices.manage') && !can('list.create')) throw forbidden();
+      p = round3(Number(String(price).replace(',', '.')));
+      if (!(p >= 0)) throw unprocessable('Ungültiger Preis.', { field: 'price' });
+    }
+    const u = unit ? String(unit).trim().slice(0, 40) : null;
+    const t = now();
+    const id = Number(db.run(`INSERT INTO purchase_items(list_id, article_id, free_name, free_unit, qty, unit_price_est, supplier_id, note, source, added_by, created_at, updated_at)
+      VALUES(?, NULL, ?, ?, ?, ?, ?, ?, 'extra', ?, ?, ?)`, listId, n, u, q, p, sid, note ? String(note).slice(0, 500) : null, user.id, t, t).lastInsertRowid);
+    logEvent(db, listId, user, 'Sonderwunsch hinzugefügt', { bezeichnung: n, menge: q, einheit: u || undefined });
+    touch(db, listId);
+    return { item_id: id };
+  });
+}
+
+/** Sonderwunsch einem (neuen oder vorhandenen) Artikel zuordnen – z. B. wenn der neue Wein ins Sortiment kommt. */
+function convertExtra(db, user, can, listId, itemId, articleId) {
+  return db.transaction(() => {
+    const list = getListRow(db, listId);
+    if (['closed', 'cancelled'].includes(list.status)) throw conflict('Die Liste ist abgeschlossen bzw. storniert.');
+    const item = db.get('SELECT * FROM purchase_items WHERE id = ? AND list_id = ? AND article_id IS NULL', itemId, listId);
+    if (!item) throw notFound('Sonderwunsch nicht gefunden.');
+    const a = db.get('SELECT * FROM articles WHERE id = ?', articleId);
+    if (!a) throw notFound('Artikel nicht gefunden.');
+    const ex = db.get('SELECT * FROM purchase_items WHERE list_id = ? AND article_id = ?', listId, a.id);
+    const t = now();
+    if (ex) {
+      db.run('UPDATE purchase_items SET qty = ?, qty_received = ?, note = ?, updated_at = ? WHERE id = ?', round3(ex.qty + item.qty), round3(ex.qty_received + item.qty_received),
+        [ex.note, item.note].filter(Boolean).join(' / ') || null, t, ex.id);
+      db.run('DELETE FROM purchase_items WHERE id = ?', item.id);
+    } else {
+      db.run('UPDATE purchase_items SET article_id = ?, free_name = NULL, free_unit = NULL, supplier_id = COALESCE(supplier_id, ?), unit_price_est = CASE WHEN unit_price_est > 0 THEN unit_price_est ELSE ? END, updated_at = ? WHERE id = ?',
+        a.id, a.supplier_id, a.price_net, t, item.id);
+    }
+    logEvent(db, listId, user, 'Sonderwunsch als Artikel übernommen', { von: item.free_name, artikel: a.name });
+    audit(db, user, 'Sonderwunsch als Artikel übernommen', 'list', listId, { von: item.free_name, artikel: a.name });
+    touch(db, listId);
+    return { ok: true };
   });
 }
 
@@ -431,5 +486,5 @@ function addRecommendations(db, user, can, listId) {
 
 module.exports = {
   STATUS_LABELS, OPEN_LIST_STATUSES, createList, activeDraft, ensureActiveDraft, upsertItem, updateItem, removeItem,
-  loadList, changeStatus, receive, mergeLists, addRecommendations, logEvent, evaluate,
+  loadList, changeStatus, receive, mergeLists, addRecommendations, logEvent, evaluate, addExtra, convertExtra,
 };

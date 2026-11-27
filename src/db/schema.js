@@ -287,4 +287,33 @@ module.exports = [
   );
   CREATE INDEX idx_article_codes_article ON article_codes(article_id);
   `,
+  // ---------- Migration 5: Sonderwünsche (freie Positionen ohne Artikel, z. B. neuer Wein zum Probieren) ----------
+  `
+  CREATE TABLE purchase_items_neu (
+    id                INTEGER PRIMARY KEY,
+    list_id           INTEGER NOT NULL REFERENCES purchase_lists(id) ON DELETE CASCADE,
+    article_id        INTEGER REFERENCES articles(id),
+    free_name         TEXT,
+    free_unit         TEXT,
+    qty               REAL NOT NULL CHECK (qty > 0),
+    qty_received      REAL NOT NULL DEFAULT 0 CHECK (qty_received >= 0),
+    unit_price_est    REAL NOT NULL DEFAULT 0,
+    unit_price_actual REAL,
+    supplier_id       INTEGER REFERENCES suppliers(id),
+    note              TEXT,
+    purchased         INTEGER NOT NULL DEFAULT 0,
+    source            TEXT NOT NULL DEFAULT 'manual',
+    added_by          INTEGER REFERENCES users(id),
+    created_at        TEXT NOT NULL,
+    updated_at        TEXT NOT NULL,
+    UNIQUE (list_id, article_id),
+    CHECK (article_id IS NOT NULL OR (free_name IS NOT NULL AND length(trim(free_name)) > 0))
+  );
+  INSERT INTO purchase_items_neu (id, list_id, article_id, qty, qty_received, unit_price_est, unit_price_actual, supplier_id, note, purchased, source, added_by, created_at, updated_at)
+    SELECT id, list_id, article_id, qty, qty_received, unit_price_est, unit_price_actual, supplier_id, note, purchased, source, added_by, created_at, updated_at FROM purchase_items;
+  DROP TABLE purchase_items;
+  ALTER TABLE purchase_items_neu RENAME TO purchase_items;
+  CREATE INDEX idx_items_article ON purchase_items(article_id);
+  CREATE INDEX idx_items_list ON purchase_items(list_id);
+  `,
 ];

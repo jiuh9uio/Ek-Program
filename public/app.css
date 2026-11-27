@@ -474,3 +474,10 @@ tfoot td { background: var(--surface-2); }
 .code-svg svg { height: 38px; width: auto; display: block; }
 .pick-btn { width: 100%; background: var(--surface); text-align: left; font: inherit; cursor: pointer; }
 .pick-btn:hover { border-color: var(--primary); }
+
+/* ---------- Sonderwünsche ---------- */
+.pill-extra { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+.extras-card { border-color: #fcd34d; background: linear-gradient(135deg, #fffbeb, #fff 60%); }
+.extras-list { list-style: none; padding: 0; margin: 0; }
+.extras-list li { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid #fde68a; }
+.extras-list li:last-child { border-bottom: 0; }

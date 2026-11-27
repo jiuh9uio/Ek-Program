@@ -17,7 +17,7 @@ module.exports = function register(router) {
       if (st.length) { where.push(`pl.status IN (${st.map(() => '?').join(',')})`); params.push(...st); }
     }
     if (query.q) {
-      where.push(`(pl.number LIKE ? OR pl.title LIKE ? OR EXISTS (SELECT 1 FROM purchase_items x JOIN articles a ON a.id = x.article_id WHERE x.list_id = pl.id AND a.name LIKE ?))`);
+      where.push(`(pl.number LIKE ? OR pl.title LIKE ? OR EXISTS (SELECT 1 FROM purchase_items x LEFT JOIN articles a ON a.id = x.article_id WHERE x.list_id = pl.id AND COALESCE(a.name, x.free_name) LIKE ?))`);
       const q = `%${query.q}%`; params.push(q, q, q);
     }
     if (query.from) { where.push('pl.created_at >= ?'); params.push(query.from); }
@@ -85,6 +85,18 @@ module.exports = function register(router) {
     const qty = v.num(body.qty, 'qty', { required: true, min: 0.001, max: 1e6, label: 'Menge' });
     const r = L.upsertItem(db, user, can, id, articleId, { qty, mode: 'add', note: v.optStr(body.note, 'note', { max: 500 }) || undefined, source: 'manual' });
     return { ...r, list: L.loadList(db, id) };
+  });
+
+  // Sonderwunsch (freie Position ohne Artikel)
+  router.post('/api/lists/:id/extras', { perm: 'list.create' }, ({ db, user, body, params, can }) => {
+    const id = Number(params.id);
+    const r = L.addExtra(db, user, can, id, body);
+    return { ...r, list: L.loadList(db, id) };
+  });
+  router.post('/api/lists/:id/items/:itemId/convert', { perm: 'articles.manage' }, ({ db, user, body, params, can }) => {
+    const id = Number(params.id);
+    L.convertExtra(db, user, can, id, Number(params.itemId), v.id(body.article_id, 'article_id', { required: true, label: 'Artikel' }));
+    return L.loadList(db, id);
   });
 
   router.post('/api/lists/:id/recommendations', { perm: 'list.create' }, ({ db, user, params, can }) => {

@@ -82,17 +82,20 @@ function loadCount(db, id) {
       order: pi ? { item_id: pi.id, qty: pi.qty, source: pi.source, note: pi.note } : null,
     };
   });
+  const extras = c.list_id ? db.all(`SELECT pi.id, pi.free_name AS name, pi.free_unit AS unit, pi.qty, pi.note, pi.unit_price_est, s.name AS supplier_name
+    FROM purchase_items pi LEFT JOIN suppliers s ON s.id = pi.supplier_id WHERE pi.list_id = ? AND pi.article_id IS NULL ORDER BY pi.id`, c.list_id) : [];
   const counted = items.filter((i) => i.state === 'counted');
   return {
     ...c,
     scope: c.scope ? JSON.parse(c.scope) : null,
     items,
+    extras,
     summary: {
       total: items.length,
       counted: counted.length,
       skipped: items.filter((i) => i.state === 'skipped').length,
       open: items.filter((i) => i.state === 'open').length,
-      on_list: items.filter((i) => i.order).length,
+      on_list: items.filter((i) => i.order).length + extras.length,
       order_value: round3(items.reduce((s, i) => s + (i.order ? i.order.qty * (i.price_net || 0) : 0), 0)),
       with_difference: counted.filter((i) => i.difference !== null && Math.abs(i.difference) > 1e-9).length,
     },

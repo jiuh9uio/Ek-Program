@@ -70,6 +70,14 @@ Der Ablauf funktioniert wie in Inventursystemen großer Firmen:
 
 **E-Mail einrichten (einmalig):** *System → E-Mail-Versand*. Anbieter antippen (Gmail, Outlook/Microsoft 365, IONOS, Strato, GMX, WEB.DE, T-Online), dann Benutzer, Passwort und Absender eintragen und **„Test-E-Mail senden“**. Bei Gmail und Microsoft ist ein **App-Passwort** nötig, nicht das normale Passwort. Das Passwort wird in der lokalen Datenbank gespeichert und nie an die Oberfläche zurückgegeben.
 
+**Sonderwünsche:** Vor dem Fertigstellen fragt das Programm: *„Noch Sonderwünsche?“*. Hier kommt alles hinein, was nicht in der Artikelliste steht: ein neuer Wein zum Probieren, Deko für eine Feier, ein Wunsch vom Küchenchef.
+
+- Eintragen: Bezeichnung, Menge, Einheit, Lieferant (optional), Preis (optional) und Bemerkung. Mit „+ Hinzufügen & weiteren“ gehen mehrere nacheinander.
+- Gibt es den Artikel schon, schlägt das Programm ihn beim Tippen vor. So entstehen keine Doppelungen.
+- Sonderwünsche erscheinen auf Bon, A4, PDF und E-Mail unter **„Sonderwünsche“** und lassen sich wie jede Position abhaken und beim Wareneingang buchen. Sie haben keine Bestandsführung und keine MIN/MAX-Grenze.
+- In jeder Einkaufsliste gibt es zusätzlich **„✍️ + Sonderwunsch“**.
+- **Kommt der neue Wein gut an:** In der Liste auf **„→ Artikel“** tippen. Er wird ein fester Artikel mit MIN/MAX; alternativ wird er einem vorhandenen Artikel zugeordnet.
+
 Mit Tastatur geht es noch schneller: Zahl tippen und *Enter* drücken. Alle Zählbelege bleiben unter **Bestandszählungen** nachvollziehbar und lassen sich als CSV exportieren.
 
 ## MIN/MAX von Claude berechnen lassen und per Tabelle einfügen
@@ -241,7 +249,7 @@ scripts/build-exe.js   EXE-Erstellung
 ```bash
 npm install
 npm start                 # http://localhost:8080
-npm test                  # 54 Tests: Berechnungen, Bestandsbuchungen, Rechte, Druck (simulierte Drucker), PDF, Sicherung
+npm test                  # 60 Tests: Berechnungen, Bestandsbuchungen, Rechte, Druck (simulierte Drucker), PDF, Sicherung
 npm run build:exe         # → dist/EK-Service.exe (Windows x64, Fensterprogramm mit Symbol; --console für Konsolenversion; baubar unter Windows/Linux/macOS)
 node scripts/make-icon.js # Programmsymbol assets/icon.ico aus assets/icon.svg neu erzeugen (benötigt Playwright)
 ```

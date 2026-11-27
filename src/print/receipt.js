@@ -127,6 +127,7 @@ function buildListDoc(list, opts = {}) {
       itemLines(i.article_name, oq.main, W).forEach((l) => line(l));
       const extra = [];
       if (oq.base) extra.push(oq.base);
+      if (i.is_free) extra.push('Sonderwunsch');
       if (i.pack_size) extra.push(i.pack_size);
       if (groupBy !== 'supplier' && !opts.supplierName && i.supplier_name) extra.push(i.supplier_name);
       if (opts.showPrices) extra.push(`ca. ${(qty * i.unit_price_est).toFixed(2).replace('.', ',')} EUR`);

@@ -4,6 +4,7 @@ import { orderText, esc, fmtQty, fmtEur, fmtDateTime, unitFor, parseNum, listBad
 import { navigate } from '../app.js';
 import { newListWizard } from './newlist.js';
 import { printBonDialog, pdfOptionsDialog, printA4, emailDialog } from './share.js';
+import { extraDialog, convertDialog } from './extras.js';
 import { sound, haptic, confetti, celebrate, checkAchievements } from '../reward.js';
 
 export async function render(el, ctx) {
@@ -131,8 +132,8 @@ async function renderDetail(el, { can, setTitle, setActions }, id) {
         <tbody><tr class="group-row"><td colspan="${showRecv ? 9 : 8}">${esc(k)} <small>(${items.length})</small></td></tr>
         ${items.map((i) => `<tr data-item="${i.id}" class="${i.purchased ? 'is-purchased' : ''}">
           <td><button class="tick ${i.purchased ? 'on' : ''}" data-i="purchased" ${closedish() || !(can('list.create') || can('print')) ? 'disabled' : ''} aria-label="eingekauft">${i.purchased ? '✓' : ''}</button></td>
-          <td><strong>${esc(i.article_name)}</strong><br><small class="muted">${esc([i.article_no, i.pack_size].filter(Boolean).join(' · '))}</small>
-            ${i.note ? `<div class="note-text">„${esc(i.note)}“</div>` : ''}${!i.article_active ? '<div class="text-red small">Artikel inaktiv</div>' : ''}</td>
+          <td><strong>${esc(i.article_name)}</strong>${i.is_free ? ' <span class="pill pill-extra">✍️ Sonderwunsch</span>' : ''}<br><small class="muted">${esc([i.article_no, i.pack_size].filter(Boolean).join(' · '))}</small>
+            ${i.note ? `<div class="note-text">„${esc(i.note)}“</div>` : ''}${!i.is_free && !i.article_active ? '<div class="text-red small">Artikel inaktiv</div>' : ''}</td>
           <td class="num">${ed ? `<div class="stepper stepper-sm"><button data-i="qty-">−</button><input data-i="qty" inputmode="decimal" value="${fmtQty(i.qty)}"><button data-i="qty+">+</button></div>` : `<strong>${fmtQty(i.qty)}</strong>`}
             <small>${esc(unitFor(i.qty, i.unit_name, i.unit_plural))}</small>${orderText(i.qty, i).base ? `<div class="small text-blue"><b>${esc(orderText(i.qty, i).main)}</b></div>` : ''}</td>
           <td>${ed ? `<select data-i="supplier">${options(suppliers.filter((s) => s.active || s.id === i.supplier_id), i.supplier_id, { empty: 'Ohne Lieferant' })}</select>` : esc(i.supplier_name || '–')}</td>
@@ -140,7 +141,7 @@ async function renderDetail(el, { can, setTitle, setActions }, id) {
           <td class="num">${ed && can('prices.manage') ? `<input class="input-sm num" data-i="price" inputmode="decimal" value="${Number(i.unit_price_est).toFixed(2).replace('.', ',')}">` : fmtEur(i.unit_price_est)}</td>
           <td class="num">${fmtEur(i.est_total)}</td>
           ${showRecv ? `<td class="num ${i.qty_received >= i.qty ? 'text-green' : i.qty_received > 0 ? 'text-amber' : ''}">${fmtQty(i.qty_received)} / ${fmtQty(i.qty)}${i.unit_price_actual !== null ? `<br><small>${fmtEur(i.unit_price_actual)}</small>` : ''}</td>` : ''}
-          <td class="row-actions">${!closedish() && can('list.create') ? `<button class="btn-icon" data-i="note" title="Bemerkung">✎</button>` : ''}${ed && i.qty_received === 0 ? `<button class="btn-icon danger" data-i="remove" title="Entfernen">🗑</button>` : ''}</td>
+          <td class="row-actions">${i.is_free && !closedish() && can('articles.manage') ? '<button class="btn btn-sm" data-i="convert" title="Fest ins Sortiment übernehmen">→ Artikel</button>' : ''}${!closedish() && can('list.create') ? `<button class="btn-icon" data-i="note" title="Bemerkung">✎</button>` : ''}${ed && i.qty_received === 0 ? `<button class="btn-icon danger" data-i="remove" title="Entfernen">🗑</button>` : ''}</td>
         </tr>`).join('')}</tbody>`).join('')}
       <tfoot>
         <tr><td colspan="6" class="num">Warenwert netto (geschätzt)</td><td class="num">${fmtEur(list.totals.est_goods)}</td><td colspan="${showRecv ? 2 : 1}"></td></tr>
@@ -192,6 +193,7 @@ async function renderDetail(el, { can, setTitle, setActions }, id) {
         ${tab === 'items' ? `<label class="sel-inline">Gruppieren <select id="grp"><option value="supplier">nach Lieferant</option><option value="category">nach Kategorie</option><option value="location">nach Lagerort</option></select></label>` : ''}
         ${tab === 'items' && editable() && can('list.create') ? `<div class="btn-row">
           <button class="btn" id="add-art">+ Artikel hinzufügen</button>
+          <button class="btn" id="add-extra">✍️ + Sonderwunsch</button>
           ${list.status === 'draft' ? '<button class="btn" id="add-rec">Empfehlungen übernehmen</button><button class="btn" id="merge">Listen zusammenführen</button><button class="btn" id="to-mode">Im Einkaufsmodus bearbeiten</button>' : ''}
         </div>` : ''}
       </div>
@@ -207,6 +209,7 @@ async function renderDetail(el, { can, setTitle, setActions }, id) {
     hf.addEventListener('submit', (e) => { e.preventDefault(); saveHead(false).then(draw); });
     hf.querySelectorAll('input').forEach((i) => i.addEventListener('change', () => saveHead(true)));
     el.querySelector('#add-art')?.addEventListener('click', addArticleDialog);
+    el.querySelector('#add-extra')?.addEventListener('click', async () => { if (await extraDialog(id, { supplierId: list.supplier_groups.length === 1 ? list.supplier_groups[0].supplier_id : null })) reload(); });
     el.querySelector('#add-rec')?.addEventListener('click', async () => {
       try { const r = await post(`/api/lists/${id}/recommendations`); toast(`${r.added} Empfehlung(en) übernommen.`, r.added ? 'success' : 'info'); reload(r.list); } catch (e) { toast(e.message, 'error'); }
     });
@@ -235,6 +238,8 @@ async function renderDetail(el, { can, setTitle, setActions }, id) {
         if (b.dataset.i === 'purchased') reload(await put(`/api/lists/${id}/items/${itemId}`, { purchased: !item.purchased }));
         else if (b.dataset.i === 'remove') {
           if (await confirmDialog(`„${item.article_name}“ aus der Liste entfernen?`, { danger: true, ok: 'Entfernen' })) reload(await del(`/api/lists/${id}/items/${itemId}`));
+        } else if (b.dataset.i === 'convert') {
+          if (await convertDialog(id, item)) reload();
         } else if (b.dataset.i === 'note') {
           const { promptDialog } = await import('../ui.js');
           const n = await promptDialog('Bemerkung zur Position:', { title: item.article_name, value: item.note || '' });

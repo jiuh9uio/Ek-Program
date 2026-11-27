@@ -36,7 +36,7 @@ function roundUpToStep(qty, step, minOrderQty = 0) {
  */
 function openQuantities(db, { department = 'service', excludeListId = null, articleId = null } = {}) {
   const params = [department];
-  let where = `pl.department = ? AND pl.status IN (${OPEN_LIST_STATUSES.map(() => '?').join(',')})`;
+  let where = `pi.article_id IS NOT NULL AND pl.department = ? AND pl.status IN (${OPEN_LIST_STATUSES.map(() => '?').join(',')})`;
   params.push(...OPEN_LIST_STATUSES);
   if (excludeListId) { where += ' AND pl.id <> ?'; params.push(excludeListId); }
   if (articleId) { where += ' AND pi.article_id = ?'; params.push(articleId); }
