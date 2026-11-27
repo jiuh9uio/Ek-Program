@@ -109,8 +109,10 @@ jobs:
           if ((Get-FileHash "$inst\EK-Service.exe").Hash -ne $want) { throw 'EXE trotz Fehler verändert' }
           # 3) Update über Download-Link (lokaler Webserver)
           Copy-Item "C:\Windows\System32\notepad.exe" "$inst\EK-Service.exe" -Force
-          $web = Start-Process python -ArgumentList '-m', 'http.server', '18130', '--directory', (Split-Path $zip) -PassThru -WindowStyle Hidden
-          Start-Sleep 3
+          $web = Start-Process python -ArgumentList '-m', 'http.server', '18130', '--bind', '127.0.0.1', '--directory', (Split-Path $zip) -PassThru -WindowStyle Hidden
+          $up = $false
+          for ($i = 0; $i -lt 30 -and -not $up; $i++) { Start-Sleep 1; try { Invoke-WebRequest http://127.0.0.1:18130/ -UseBasicParsing -TimeoutSec 2 | Out-Null; $up = $true } catch {} }
+          if (-not $up) { throw 'Test-Webserver startet nicht' }
           $env:EK_UPDATE_SOURCE = 'http://127.0.0.1:18130/EK-Service-Windows.zip'
           cmd /c "`"$inst\EK-Service-Update.bat`""
           $rc = $LASTEXITCODE
